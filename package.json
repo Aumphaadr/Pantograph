@@ -1,0 +1,11 @@
+{
+  "name": "pantograph",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Снять контур с растровой картинки: иконку — в SVG, набор букв — в шрифт",
+  "scripts": {
+    "test": "node tests/run.js",
+    "serve": "python3 -m http.server 8080"
+  }
+}

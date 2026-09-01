@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Пантограф — шрифтовые листы</title>
+<style>
+ body{margin:0;background:#14171a;color:#e3e7ea;font:14px system-ui;padding:18px}
+ h1{font-size:15px;margin:0 0 6px;color:#6ebee0}
+ .lead{color:#9ca6b1;font-size:14px;margin:0 0 16px;max-width:72ch;line-height:1.5}
+ table{border-collapse:collapse;font-size:14px}
+ th,td{padding:5px 12px;text-align:left;border-bottom:1px solid #2b3239}
+ th{color:#6c7783;font-weight:500}
+ td.n{font-family:ui-monospace,monospace;text-align:right}
+ .ok{color:#7fbf9c}.bad{color:#e0806a}
+</style>
+<body>
+<h1>Шрифтовые листы</h1>
+<p class="lead">Каждый лист из <code>glyph-sheets/</code> разбирается на буквы и
+сверяется с <code>glyphs.txt</code>. Строки подгоняются под известное число знаков —
+поэтому многоточие из трёх точек и процент из трёх частей не сбивают счёт.
+Требует сервера: <code>npm run serve</code>, затем <code>/tests/sheets-visual.html</code>.</p>
+<table id="t"><thead><tr><th>лист</th><th>компонент</th><th>букв</th>
+<th>ждём</th><th>промахов</th><th>время</th></tr></thead><tbody></tbody></table>
+<script type="module">
+import { colorDistance, threshold, morph, guessBackground, guessForeground } from '../js/prep/mask.js';
+import { segment } from '../js/glyphs/segment.js';
+import { autoMerge, mergeTight, fitRows } from '../js/glyphs/merge.js';
+import { buildGlyphs } from '../js/glyphs/build.js';
+import { parseLines, autoAssign, label } from '../js/glyphs/assign.js';
+
+const FILES = [
+    '01-display-heavy-cyrillic.png',
+    '01-display-heavy.png',
+    '02-display-heavy-latin-symbols.png',
+    '03-ui-sans-medium-cyrillic.png',
+    '04-ui-sans-medium-latin-symbols.png',
+    '05-ui-sans-regular-cyrillic.png',
+    '06-ui-sans-regular-latin-symbols.png',
+    '07-text-serif-regular-cyrillic.png',
+    '08-text-serif-regular-latin-symbols.png',
+    '09-text-serif-italic-cyrillic.png',
+    '10-text-serif-italic-latin-symbols.png',
+    '11-signature-script-cyrillic.png',
+    '12-signature-script-latin-symbols.png',
+];
+const all = (await (await fetch('../glyph-sheets/glyphs.txt')).text()).trim().split('\n');
+const tb = document.querySelector('#t tbody');
+
+for (const name of FILES) {
+  const img = new Image();
+  img.src = '../glyph-sheets/' + name;
+  await img.decode();
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  const src = g.getImageData(0, 0, c.width, c.height);
+
+  const t0 = performance.now();
+  const bg = guessBackground(src), fg = guessForeground(src, bg);
+  const soft = colorDistance(src, { fg, bg, tolerance: 70 });
+  const bin = morph(threshold(soft, 0.5), {});
+  const text = /latin|symbols/.test(name) ? all.slice(6).join('\n')
+    : (name === '01-display-heavy.png' ? all.join('\n') : all.slice(0, 6).join('\n'));
+  const lines = parseLines(text);
+  const comps = segment(soft, bin, { minArea: 1 });
+  const fit = fitRows(mergeTight(autoMerge(comps), comps), comps,
+    lines.map((l) => l.filter((x) => !x.space).length));
+  const built = buildGlyphs(soft, bin, {}, fit.groups);
+  const { codes } = autoAssign(built.glyphs, lines);
+  const ms = Math.round(performance.now() - t0);
+
+  const got = built.glyphs.map((x, i) => label(codes[i]) || '·').join('');
+  const want = lines.map((l) => l.filter((x) => !x.space).map((x) => x.ch).join('')).join('');
+  let bad = 0;
+  for (let i = 0; i < Math.max(got.length, want.length); i += 1) if (got[i] !== want[i]) bad += 1;
+
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${name.replace('.png', '')}</td>
+    <td class="n">${built.components.length}</td><td class="n">${built.glyphs.length}</td>
+    <td class="n">${want.length}</td>
+    <td class="n ${bad ? 'bad' : 'ok'}">${bad}</td><td class="n">${ms} мс</td>`;
+  tb.append(tr);
+}
+document.title = 'готово';
+</script>

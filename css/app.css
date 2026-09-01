@@ -1,0 +1,960 @@
+/* Пантограф — оболочка. Палитра чертёжного стола: графит, бумага,
+   нефотографирующий голубой для разметки. */
+
+:root {
+  --bg:        #EDEFF1;
+  --surface:   #FBFCFC;
+  --surface-2: #E4E8EB;
+  --ink:       #16191D;
+  --ink-2:     #545E69;
+  --ink-3:     #838D98;
+  --rule:      #D2D8DD;
+  --rule-firm: #B6BFC7;
+  --accent:    #17627F;
+  --accent-2:  #4E9CBE;
+  --wash:      #DCEDF5;
+  --warn:      #A93F2B;
+  --warn-wash: #F3DFDA;
+  --stage-bg:  #DFE3E7;
+
+  /* Ниже четырнадцати пикселей в интерфейсе ничего нет. Иерархия держится
+     насыщенностью, цветом и разрядкой, а не мелким кеглем. */
+  --f-min: 14px;
+
+  --f-ui:   "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  /* Полосы прокрутки заодно с остальным: color-scheme красит те, что рисует
+     сама система (в выпадающих списках, например), а свойства ниже — обычные. */
+  color-scheme: light;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule-firm) transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg:        #131619;
+    --surface:   #1A1F24;
+    --surface-2: #232930;
+    --ink:       #E3E7EA;
+    --ink-2:     #9CA6B1;
+    --ink-3:     #6C7783;
+    --rule:      #2B3239;
+    --rule-firm: #3D454E;
+    --accent:    #6EBEE0;
+    --accent-2:  #4E93B2;
+    --wash:      #1B3542;
+    --warn:      #E0806A;
+    --warn-wash: #3A241F;
+    --stage-bg:  #0D0F11;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* Прокрутка в старых движках на WebKit: scrollbar-color там не работает. */
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+::-webkit-scrollbar-thumb {
+  background: var(--rule-firm);
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover { background: var(--ink-3); background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.5 var(--f-ui);
+  overflow: hidden;
+}
+
+/* ─── верхняя панель ─────────────────────────────────────────────────────── */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 9px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: var(--accent);
+}
+
+.spacer { flex: 1; }
+
+.file-group, .zoom-group { display: flex; align-items: center; gap: 8px; }
+
+.img-meta { display: flex; gap: 10px; font-size: 14px; color: var(--ink-3); }
+.img-meta b { font-weight: 600; color: var(--ink-2); }
+.img-meta span { font-family: var(--f-mono); font-size: 14px; }
+
+.zoom-readout {
+  font-family: var(--f-mono);
+  font-size: 14px;
+  color: var(--ink-2);
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  font: inherit;
+  font-size: 14px;
+  padding: 5px 12px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn.icon { padding: 5px 10px; font-size: 15px; line-height: 1; }
+.btn.wide { width: 100%; padding: 8px; }
+
+/* ─── полоса шагов ───────────────────────────────────────────────────────── */
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 7px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+.step-list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex-wrap: wrap;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  font-size: 14px;
+  color: var(--ink-3);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.step:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.step:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.step:disabled { opacity: 0.4; cursor: default; }
+
+.step.on {
+  color: var(--accent);
+  background: var(--wash);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.step .num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 14px;
+  font-family: var(--f-mono);
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  flex: none;
+}
+
+.step-sep { color: var(--rule-firm); padding: 0 2px; }
+
+/* ─── рабочая область ────────────────────────────────────────────────────── */
+
+/* Атрибут hidden сильнее любой раскладки: .font-view и другие виды задают
+   собственный display, и без !important спрятанный узел продолжал рисоваться. */
+[hidden] { display: none !important; }
+
+.work { position: relative; overflow: hidden; background: var(--stage-bg); }
+.work > * { position: absolute; inset: 0; }
+
+.grid-view { overflow: auto; padding: 16px; background: var(--stage-bg); }
+
+.font-view {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: auto;
+  padding: 24px;
+  background: var(--stage-bg);
+}
+
+/* ─── холст ──────────────────────────────────────────────────────────────── */
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 7px var(--panel-w, 340px);
+  min-height: 0;
+}
+
+/* ─── разделитель ──────────────────────────────────────────────────────── */
+
+.splitter {
+  position: relative;
+  background: var(--rule);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.splitter:hover, .splitter.dragging { background: var(--accent-2); }
+.splitter:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.splitter-toggle {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 15px;
+  height: 30px;
+  padding: 0;
+  font: 14px/1 var(--f-ui);
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--rule-firm);
+  border-radius: 3px;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.splitter-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.splitter.collapsed { cursor: e-resize; }
+
+.stage { background: var(--stage-bg); overflow: hidden; }
+
+.stage canvas, .stage .overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.overlay { cursor: default; touch-action: none; }
+
+/* ─── редактор ─────────────────────────────────────────────────────────── */
+
+.ed-path { fill: none; stroke: var(--accent-2); stroke-width: 1.4; }
+.ed-path.filled { fill: rgb(78 156 190 / 0.28); }
+/* Соседний слой виден, но не спорит за внимание с правимым. */
+.ed-path.dim { opacity: 0.4; stroke-dasharray: 4 3; }
+
+/* Осевая линия показывается своей толщиной, а не волоском. */
+.ed-stroke {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+.ed-stroke.dim { opacity: 0.35; }
+/* Под правкой: толщина видна, но не спорит с самой осевой линией. */
+.ed-stroke.own { opacity: 0.3; }
+
+.ed-handle-line { stroke: var(--accent-2); stroke-width: 1; opacity: 0.6; }
+.ed-handle { fill: var(--surface); stroke: var(--accent-2); stroke-width: 1.4; }
+.ed-handle.hot { fill: var(--accent); }
+
+.ed-node { fill: var(--surface); stroke: var(--accent-2); stroke-width: 1.5; }
+.ed-node.corner { stroke: var(--warn); }
+.ed-node.on { fill: var(--accent); stroke: var(--accent); }
+.ed-node.corner.on { fill: var(--warn); stroke: var(--warn); }
+.ed-node.hot { stroke-width: 2.4; }
+
+.ed-insert { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 2 2; }
+.ed-marquee { fill: rgb(78 156 190 / 0.12); stroke: var(--accent-2); stroke-dasharray: 4 3; }
+
+
+
+/* ─── сетка глифов ─────────────────────────────────────────────────────── */
+
+.wide-seg { width: 100%; margin-bottom: 14px; }
+.wide-seg button { flex: 1; padding: 5px 0; font-size: 14px; }
+
+.glyph-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  /* Без этого плитки тянутся до высоты самой рослой буквы в ряду и под
+     низкими зияет пустая чернота — сетка выглядит дырявой. */
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.glyph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: var(--stage-bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 3px;
+  cursor: pointer;
+  line-height: 0;
+  flex: 0 0 auto;
+}
+
+.glyph.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.glyph canvas, .glyph svg { grid-area: 1 / 1; display: block; image-rendering: pixelated; }
+.glyph .stack { display: grid; }
+
+/* ─── метрики ──────────────────────────────────────────────────────────── */
+
+.ov-guide { stroke: var(--accent-2); stroke-width: 1; stroke-dasharray: 5 4; }
+.ov-guide.baseline { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: none; }
+.ov-guide.hot { stroke-width: 2.4; stroke-dasharray: none; }
+.ov-guide-label {
+  fill: var(--accent-2);
+  font: 14px var(--f-mono);
+  paint-order: stroke;
+  stroke: var(--stage-bg);
+  stroke-width: 3px;
+}
+.ov-glyph { fill: none; stroke: var(--ink-3); stroke-width: 1; opacity: 0.75; }
+
+.strip-box {
+  background: var(--stage-bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+}
+
+.strip { display: block; height: 92px; }
+.strip .g { fill: var(--ink); }
+.strip .base { stroke: var(--accent); stroke-width: 1; }
+.strip .rule-line { stroke: var(--rule-firm); stroke-width: 1; stroke-dasharray: 4 3; }
+
+#m-controls { margin-bottom: 10px; }
+
+/* ─── шрифт ────────────────────────────────────────────────────────────── */
+
+.font-sample {
+  font-size: 48px;
+  line-height: 1.35;
+  color: var(--ink);
+  word-break: break-word;
+  max-width: 100%;
+}
+
+.font-sample.empty {
+  color: var(--ink-3);
+  font-size: 15px;
+  max-width: 46ch;
+  line-height: 1.6;
+}
+
+body:not(.route-font) #pr-pack { display: none; }
+
+label.btn { display: inline-flex; align-items: center; justify-content: center; }
+
+/* ─── похоже на примитив ───────────────────────────────────────────────── */
+
+.prim-list { margin-bottom: 12px; }
+
+.prim {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+}
+
+.prim-what { flex: 1; color: var(--ink-2); }
+.prim-what b { color: var(--ink); font-weight: 600; }
+.prim-err { font-family: var(--f-mono); font-size: 14px; color: var(--ink-3); }
+.prim .btn { padding: 4px 10px; }
+.prim-none { font-size: 14px; color: var(--ink-3); padding: 6px 0; }
+
+/* ─── подсказки ────────────────────────────────────────────────────────── */
+
+.ctl-head { display: flex; align-items: center; gap: 5px; min-width: 0; }
+
+.hint {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  padding: 0;
+  font: 700 14px/1 var(--f-ui);
+  color: var(--ink-3);
+  background: transparent;
+  border: 1px solid var(--rule-firm);
+  border-radius: 50%;
+  cursor: help;
+}
+
+.hint:hover, .hint:focus-visible { color: var(--accent); border-color: var(--accent); }
+.hint:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.hint-pop {
+  position: fixed;
+  z-index: 50;
+  max-width: 300px;
+  padding: 9px 11px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-firm);
+  border-radius: 5px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.28);
+}
+
+.hint-pop::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: var(--surface);
+  border-right: 1px solid var(--rule-firm);
+  border-bottom: 1px solid var(--rule-firm);
+  transform: rotate(45deg);
+}
+
+.hint-pop.below::after { bottom: auto; top: -5px; transform: rotate(225deg); }
+
+/* ─── привязка к символам ──────────────────────────────────────────────── */
+
+.field { display: block; margin-bottom: 10px; }
+.field > span { display: block; font-size: 14px; color: var(--ink-2); margin-bottom: 4px; }
+
+.field textarea {
+  width: 100%;
+  font: 14px/1.4 var(--f-mono);
+  padding: 6px 8px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.field textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.note { margin: 0 0 10px; font-size: 14px; line-height: 1.45; color: var(--ink-3); }
+.note.warn-text { color: var(--warn); }
+
+.char-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.char-field input {
+  width: 34px;
+  text-align: center;
+  font: 600 14px var(--f-ui);
+  padding: 3px 0;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+}
+
+.char-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Подпись под плиткой, а не поверх неё: значок четырнадцатого кегля закрывал
+   часть буквы — ровно то, что человек и пришёл разглядывать. */
+.glyph .ch {
+  font: 600 14px/1.2 var(--f-ui);
+  color: var(--accent);
+}
+
+.glyph .ch.none { color: var(--warn); }
+
+.pick {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 6px;
+  margin-bottom: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+}
+
+.alpha-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-bottom: 10px;
+}
+
+.alpha-pick label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.alpha-pick label.full { color: var(--good); }
+
+.cover-out { font-size: 14px; line-height: 1.55; margin-bottom: 12px; }
+.cover-out .alpha { margin-bottom: 8px; }
+.cover-out .head { color: var(--ink-2); }
+.cover-out .head b { color: var(--ink); font-weight: 600; }
+.cover-out .head.full b { color: var(--good); }
+.cover-out .row { display: flex; gap: 6px; margin-bottom: 3px; }
+.cover-out .lbl { color: var(--ink-3); flex: none; min-width: 76px; }
+.cover-out .have { color: var(--good); font-family: var(--f-mono); word-break: break-all; }
+.cover-out .miss { color: var(--warn); font-family: var(--f-mono); word-break: break-all; }
+.cover-out .dup { color: var(--ink-2); font-family: var(--f-mono); }
+
+.glyph .gpath { fill: none; stroke: var(--accent-2); stroke-width: 1; }
+
+
+
+.ov-group { fill: none; stroke: var(--accent-2); stroke-width: 1; stroke-dasharray: 3 2; }
+
+.sel-count { margin: 0 0 10px; font-size: 14px; color: var(--ink-2); }
+
+.btn-row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+.btn-row .btn { flex: 1; padding: 5px 4px; font-size: 14px; }
+
+.snap { display: flex; align-items: center; gap: 5px; font-size: 14px; color: var(--ink-2); }
+
+.hint-block {
+  margin: 8px 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.warn.detached { background: var(--wash); border-left-color: var(--accent); }
+.warn.detached .btn { margin-top: 9px; }
+
+body.detached #controls { opacity: 0.5; }
+body.detached .colors { opacity: 0.5; pointer-events: none; }
+
+.ov-shade  { fill: rgb(10 14 18 / 0.55); }
+.ov-frame  { fill: none; stroke: var(--accent-2); stroke-width: 1.5; }
+.ov-handle { fill: var(--surface); stroke: var(--accent-2); stroke-width: 1.5; }
+
+/* ─── приглашение ────────────────────────────────────────────────────────── */
+
+.drop {
+  position: absolute;
+  inset: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 2px dashed var(--rule-firm);
+  border-radius: 8px;
+  color: var(--ink-3);
+  text-align: center;
+  pointer-events: none;
+}
+
+body.has-image .drop { display: none; }
+
+/* Вуаль дропа живёт на body, а не в столе: стол на шагах «Буквы» и «Шрифт»
+   спрятан, и приглашение внутри него не могло показаться — казалось, что
+   перетащить новую картинку поверх старой нельзя. */
+.drop-veil {
+  position: fixed;
+  inset: 12px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--wash) 82%, transparent);
+  pointer-events: none;
+}
+
+.drop-veil p { font-size: 17px; font-weight: 600; color: var(--accent); }
+
+.busy { color: var(--accent); font-weight: 600; margin-right: 10px; }
+.grid-note { color: var(--ink-2); font-size: 15px; padding: 8px 2px; }
+
+.drop-title { margin: 0; font-size: 17px; font-weight: 600; color: var(--ink-2); }
+.drop-hint { margin: 0; max-width: 34em; }
+
+kbd {
+  font-family: var(--f-mono);
+  font-size: 14px;
+  padding: 1px 5px;
+  border: 1px solid var(--rule-firm);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--ink-2);
+}
+
+/* ─── правая панель ──────────────────────────────────────────────────────── */
+
+.panel {
+  background: var(--surface);
+  border-left: 1px solid var(--rule);
+  padding: 16px;
+  overflow: hidden auto;
+  /* Сеточный элемент по умолчанию не сжимается ниже своего содержимого,
+     и свёрнутая панель оставляла бы полоску в тридцать пикселей. */
+  min-width: 0;
+}
+
+/* Свёрнутая панель уходит и из порядка обхода: незачем тыкаться Tab'ом
+   в поля, которых не видно. Отступы и рамку тоже снимаем — ниже их суммы
+   ширина не опускается ни при каком box-sizing, и оставалась бы полоска. */
+.splitter.collapsed ~ .panel {
+  visibility: hidden;
+  padding: 0;
+  border-left-width: 0;
+}
+
+.panel-title {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.panel-empty { color: var(--ink-3); font-size: 14px; }
+.panel-body  { display: none; }
+
+body.has-crop .panel-empty { display: none; }
+body.has-crop .panel-body  { display: block; }
+
+/* ─── показ результата ─────────────────────────────────────────────────── */
+
+.result-box {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 240px;
+  padding: 10px;
+  background: var(--stage-bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#preview { image-rendering: pixelated; display: block; grid-area: 1 / 1; }
+
+.result-svg {
+  grid-area: 1 / 1;
+  width: var(--zoom-w, 100%);
+  height: var(--zoom-h, 100%);
+  pointer-events: none;
+}
+
+.res-path { fill: none; stroke: var(--accent-2); stroke-width: 1.4; }
+.res-path.filled { fill: rgb(78 156 190 / 0.35); }
+.res-handle { stroke: var(--accent-2); stroke-width: 1; opacity: 0.55; }
+.res-node { fill: var(--surface); stroke: var(--accent-2); stroke-width: 1.2; }
+.res-node.corner { fill: var(--warn); stroke: var(--warn); }
+
+.modes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+  font-size: 14px;
+  color: var(--ink-2);
+  flex-wrap: wrap;
+}
+
+.modes label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+/* Подложка — свойство рабочей области, а не одного шага: переключатель висит
+   на самой картинке, чтобы растр можно было убрать и на «Маске», и на
+   «Контуре», не уходя с шага. */
+.stage-seg {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 3;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
+}
+body:not(.has-image) .stage-seg { display: none; }
+
+.seg { display: flex; border: 1px solid var(--rule-firm); border-radius: 4px; overflow: hidden; }
+
+.seg button {
+  font: inherit;
+  font-size: 14px;
+  padding: 3px 9px;
+  border: none;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button.on { background: var(--wash); color: var(--accent); font-weight: 600; }
+
+/* ─── цвета и ползунки ─────────────────────────────────────────────────── */
+
+.colors { display: flex; gap: 8px; margin-bottom: 14px; }
+
+.swatch-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 14px;
+  padding: 5px 9px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-firm);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.swatch-btn:hover { background: var(--surface-2); }
+.swatch-btn.picking { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.swatch-btn .lbl { flex: 1; text-align: left; }
+
+/* Значок пипетки прямо в кнопке: иначе по образцу цвета не догадаться, что
+   он берётся с картинки, а не выбирается из палитры. */
+.swatch-btn .pip {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--ink-3);
+}
+
+.swatch-btn:hover .pip { color: var(--ink-2); }
+.swatch-btn.picking .pip { color: var(--accent); }
+
+/* ─── слои ─────────────────────────────────────────────────────────────── */
+
+.layer-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+
+.layer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.layer.on { border-color: var(--accent); background: var(--wash); }
+.layer.off .lay-name, .layer.off .swatch { opacity: 0.45; }
+
+.layer .lay-pick { flex: none; padding: 4px 6px; }
+
+.lay-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 6px;
+  border: none;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lay-eye, .lay-del {
+  flex: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  width: 26px;
+  padding: 5px 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.lay-eye:hover, .lay-del:hover { background: var(--surface-2); color: var(--ink); }
+.lay-del:disabled { opacity: 0.35; cursor: default; }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--ink-2);
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+.swatch {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  border: 1px solid var(--rule-firm);
+  flex: none;
+}
+
+/* Перекрестие сильнее инлайнового курсора: инструменты кропа и правки ставят
+   свой прямо в style оверлея, и без !important пипетка оставалась со стрелкой.
+   Переключатель подложки из-под перекрестия исключён — он остаётся кнопкой. */
+.stage.picking, .stage.picking * { cursor: crosshair !important; }
+.stage.picking .stage-seg, .stage.picking .stage-seg * { cursor: pointer !important; }
+
+/* Лупа пипетки: цвет под курсором виден до клика — в тонкий штрих иначе
+   не прицелиться. Ходит за указателем, сама событий не ловит. */
+.lens {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--rule-firm);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 35%);
+  pointer-events: none;
+}
+
+.lens-swatch {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--rule-firm);
+  background: transparent;
+}
+
+.lens-label {
+  font: 14px var(--f-mono);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+#controls details {
+  border-top: 1px solid var(--rule);
+  padding: 8px 0;
+}
+
+#controls summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 2px 0;
+}
+
+.ctl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 8px;
+}
+
+.ctl label { font-size: 14px; color: var(--ink-2); cursor: help; }
+
+.ctl-value {
+  font-family: var(--f-mono);
+  font-size: 14px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.ctl input[type=range] { grid-column: 1 / -1; width: 100%; margin: 0; accent-color: var(--accent); }
+.ctl select.pick { grid-column: 1 / -1; margin: 2px 0 0; }
+
+.facts { margin: 14px 0; display: grid; gap: 6px; }
+.facts > div { display: flex; justify-content: space-between; gap: 12px; }
+
+.facts dt { color: var(--ink-3); font-size: 14px; }
+
+.facts dd {
+  margin: 0;
+  font-family: var(--f-mono);
+  font-size: 14px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.warn {
+  margin: 0 0 14px;
+  padding: 9px 11px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--warn-wash);
+  border-left: 3px solid var(--warn);
+  border-radius: 0 3px 3px 0;
+}
+
+.stage-note { margin: 10px 0 0; font-size: 14px; color: var(--ink-3); }
+
+/* ─── строка состояния ───────────────────────────────────────────────────── */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+#status.error { color: var(--warn); font-weight: 600; }
+.hints { color: var(--ink-3); font-size: 14px; }
+
+@media (max-width: 720px) {
+  main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .splitter { display: none; }
+  .steps { flex-wrap: wrap; gap: 8px; }
+  .panel { max-height: 50vh; }
+  .panel { border-left: none; border-top: 1px solid var(--rule); max-height: 42vh; }
+  .hints { display: none; }
+}

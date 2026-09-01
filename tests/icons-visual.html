@@ -1,0 +1,125 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Пантограф — трассировка набора icon-crops</title>
+<style>
+ body{margin:0;background:#14171a;color:#e3e7ea;font:13px system-ui;padding:18px}
+ h1{font-size:15px;margin:0 0 4px;color:#6ebee0}
+ .lead{color:#9ca6b1;font-size:12px;margin:0 0 16px;max-width:70ch;line-height:1.5}
+ .grid{display:flex;flex-wrap:wrap;gap:14px}
+ .card{background:#1a1f24;border:1px solid #2b3239;border-radius:5px;padding:9px;width:190px}
+ .name{font:10px ui-monospace,monospace;letter-spacing:.04em;color:#9ca6b1;margin-bottom:7px;
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .box{position:relative;display:grid;place-items:center;background:#0d0f11;border-radius:3px;
+      width:172px;height:172px;overflow:hidden}
+ canvas,svg{grid-area:1/1;display:block}
+ canvas{image-rendering:pixelated}
+ .st{margin-top:7px;font:10px ui-monospace,monospace;color:#9ca6b1;line-height:1.55;white-space:pre}
+ .sw{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:-1px;
+     border:1px solid #3d454e;margin-right:3px}
+ .bad{color:#e0806a}
+</style>
+<body>
+<h1>Трассировка набора icon-crops</h1>
+<p class="lead">Ручная проверка: каждая картинка из <code>icon-crops/</code> прогоняется
+через тот же конвейер, что и приложение, с настройками по умолчанию и автоматической
+догадкой о цветах. Требует сервера: <code>npm run serve</code>, затем открыть
+<code>/tests/icons-visual.html</code>.</p>
+<div class="grid" id="grid"></div>
+
+<script type="module">
+import { colorDistance, upscale, threshold, morph, capScale,
+         guessBackground, guessForeground } from '../js/prep/mask.js';
+import { traceMask } from '../js/trace/trace.js';
+import { countNodes, bounds } from '../js/core/path.js';
+import { toPathData } from '../js/export/svg.js';
+import { defaults } from '../js/ui/params.js';
+
+// Список фиксирован: каталог из браузера не прочитать.
+const FILES = [
+    '00-brand-emblem.png',
+    '01-home.png',
+    '02-map-pin.png',
+    '03-folder.png',
+    '04-image.png',
+    '05-play-square.png',
+    '06-gamepad.png',
+    '07-edit-square.png',
+    '08-user.png',
+    '09-briefcase.png',
+    '10-institution.png',
+    '11-clipboard.png',
+    '12-paperclip-corrected-master.png',
+    '12-paperclip-corrected.png',
+    '12-paperclip-original.png',
+    '13-teacup.png',
+    '14-shield-mark.png',
+];
+
+const P = defaults();
+const grid = document.getElementById('grid');
+const rgb = (c) => `rgb(${c[0]} ${c[1]} ${c[2]})`;
+
+for (const name of FILES) {
+ try {
+  const img = new Image();
+  img.src = '../icon-crops/' + name;
+  await img.decode();
+
+  const cv0 = document.createElement('canvas');
+  cv0.width = img.naturalWidth; cv0.height = img.naturalHeight;
+  const g0 = cv0.getContext('2d', { willReadFrequently: true });
+  g0.drawImage(img, 0, 0);
+  const src = g0.getImageData(0, 0, cv0.width, cv0.height);
+
+  const bg = guessBackground(src);
+  const fg = guessForeground(src, bg);
+
+  const t0 = performance.now();
+  const k = capScale(src.width, src.height, P.upscale);
+  let m = colorDistance(src, { fg, bg, tolerance: P.tolerance });
+  m = upscale(m, k);
+  m = threshold(m, P.level);
+  m = morph(m, { open: P.open, close: P.close });
+  const shape = traceMask(m, k, {
+    level: 0.5, simplify: P.simplify, cornerAngle: P.cornerAngle,
+    fitError: P.fitError, minArea: P.minArea,
+  });
+  const ms = (performance.now() - t0).toFixed(0);
+
+  // Мелкое увеличиваем целым числом (видеть пиксели), крупное ужимаем дробно.
+  const fit = 168 / Math.max(src.width, src.height);
+  const zoom = fit >= 1 ? Math.min(8, Math.floor(fit)) : fit;
+  const W = Math.round(src.width * zoom), H = Math.round(src.height * zoom);
+  const nodes = countNodes(shape);
+  const b = bounds(shape);
+  const overflow = b && (b.x < -1 || b.y < -1
+    || b.x + b.w > src.width + 1 || b.y + b.h > src.height + 1);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `<div class="name" title="${name}">${name}</div>
+    <div class="box"><canvas width="${W}" height="${H}"></canvas>
+    <svg width="${W}" height="${H}" viewBox="0 0 ${src.width} ${src.height}"></svg></div>
+    <div class="st">${src.width}×${src.height} · апскейл ×${k} · показ ×${zoom < 1 ? zoom.toFixed(2) : zoom} · ${ms} мс
+контуров ${shape.contours.length} · узлов ${nodes}
+<span class="sw" style="background:${rgb(fg)}"></span>${fg.join(',')}  <span class="sw" style="background:${rgb(bg)}"></span>${bg.join(',')}${overflow ? '\n<span class="bad">контур вышел за кроп</span>' : ''}</div>`;
+
+  const g = card.querySelector('canvas').getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.drawImage(cv0, 0, 0, W, H);
+  card.querySelector('svg').innerHTML =
+    `<path d="${toPathData(shape, 3)}" fill="rgb(110 190 224 / .28)" stroke="#6ebee0"
+       stroke-width="1.1" vector-effect="non-scaling-stroke" fill-rule="nonzero"/>`;
+  grid.append(card);
+ } catch (err) {
+  // Одна упавшая картинка не должна уносить весь лист.
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `<div class="name">${name}</div>
+    <div class="st bad">не обработано:\n${String(err && err.message || err).slice(0, 160)}</div>`;
+  grid.append(card);
+  console.error(name, err);
+ }
+}
+document.title = 'готово';
+</script>

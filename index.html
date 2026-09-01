@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пантограф</title>
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">Пантограф</div>
+
+  <div class="file-group">
+    <label class="btn" for="file">Открыть картинку</label>
+    <input id="file" type="file" accept="image/*" hidden>
+    <span class="img-meta"><b id="img-name"></b><span id="img-size"></span></span>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="zoom-group" id="zoom-group">
+    <button id="zoom-out" class="btn icon" title="Мельче (−)">−</button>
+    <span id="zoom" class="zoom-readout">100%</span>
+    <button id="zoom-in" class="btn icon" title="Крупнее (+)">+</button>
+    <button id="zoom-1" class="btn" title="Один к одному (1)">1:1</button>
+    <button id="fit" class="btn" title="Вписать (0)">Вписать</button>
+  </div>
+</header>
+
+<nav class="steps">
+  <div class="seg" id="route-switch">
+    <button data-route="icon" class="on">Иконка</button>
+    <button data-route="font">Шрифт</button>
+  </div>
+  <ol class="step-list" id="step-list"></ol>
+</nav>
+
+<main>
+  <section id="work" class="work">
+    <div id="stage" class="stage">
+      <canvas id="canvas"></canvas>
+      <svg id="overlay" class="overlay" preserveAspectRatio="none"></svg>
+      <div class="seg stage-seg" id="bg-mode">
+        <button data-mode="mask" class="on">Маска</button>
+        <button data-mode="raster">Растр</button>
+        <button data-mode="both">Вместе</button>
+      </div>
+      <div id="drop" class="drop">
+        <p class="drop-title">Перетащите картинку сюда</p>
+        <p class="drop-hint">или вставьте из буфера обмена <kbd>Ctrl</kbd>+<kbd>V</kbd>,
+          или нажмите «Открыть картинку»</p>
+      </div>
+    </div>
+
+    <div id="grid-view" class="grid-view" hidden>
+      <div id="glyph-grid" class="glyph-grid"></div>
+    </div>
+
+    <div id="font-view" class="font-view" hidden>
+      <div class="font-sample" id="font-sample"></div>
+    </div>
+  </section>
+
+  <div id="splitter" class="splitter" role="separator" aria-orientation="vertical"
+       aria-label="Ширина панели" tabindex="0" aria-valuemin="0" aria-valuenow="340"
+       title="Тянуть — менять ширину, двойной щелчок — вернуть умолчание">
+    <button id="panel-toggle" class="splitter-toggle" type="button"
+            aria-expanded="true" tabindex="-1">›</button>
+  </div>
+
+  <aside id="panel" class="panel">
+    <div class="panel-empty">
+      Откройте картинку и протяните по ней рамку — внутри рамки фрагмент,
+      который пойдёт в обработку.
+    </div>
+
+    <div class="panel-body">
+
+      <section class="step-panel" data-step="image">
+        <h2 class="panel-title">Кроп</h2>
+        <dl class="facts">
+          <div><dt>Размер</dt><dd id="crop-size">—</dd></div>
+        </dl>
+        <p id="crop-warn" class="warn" hidden></p>
+        <p class="hint-block">Протяните рамку по картинке; за ручки её можно
+          менять, за середину — двигать. <kbd>Esc</kbd> снимает выделение.</p>
+      </section>
+
+      <section class="step-panel" data-step="mask">
+        <h2 class="panel-title">Фон</h2>
+        <div class="colors">
+          <button class="swatch-btn" id="pick-bg" type="button"
+            title="Пипетка: щёлкните по фону на картинке (Esc — отмена)">
+            <span class="swatch" id="sw-bg"></span><svg class="pip" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2.5a1.8 1.8 0 0 1 2.5 2.5l-1.2 1.2 1 1-1 1-1-1-4.4 4.4-2.4.7.7-2.4 4.4-4.4-1-1 1-1 1 1z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg><span class="lbl">Фон</span></button>
+        </div>
+
+        <h2 class="panel-title">Чернила</h2>
+        <ul id="layer-list" class="layer-list"></ul>
+        <div class="btn-row">
+          <button id="lay-add" class="btn">Добавить</button>
+          <button id="lay-guess" class="btn">Разобрать цвета</button>
+        </div>
+        <label class="check" title="Спорный пиксель на спаде между двумя цветами отходит одному слою — тому, чьё значение больше">
+          <input type="checkbox" id="lay-exclusive" checked> победитель забирает всё
+        </label>
+        <p class="hint-block">Слой — одни чернила: свой цвет и свой допуск.
+          Маска и кривые общие, они про растр. Пипетка в строке слоя берёт
+          его цвет с картинки.</p>
+
+        <dl class="facts">
+          <div><dt>Кроп</dt><dd id="mask-crop">—</dd></div>
+          <div><dt>Маска</dt><dd id="mask-size">—</dd></div>
+        </dl>
+        <div id="controls-mask"></div>
+
+        <button id="tune" class="btn wide">Подобрать сам</button>
+        <p class="hint-block">Ловит контур за минимум узлов, сверяя растр с
+          рендером контура. Иконка — секунды, лист с буквами — около минуты;
+          ползунки получат найденные значения открыто. Любое движение
+          ползунка прерывает подбор.</p>
+      </section>
+
+      <section class="step-panel" data-step="contour">
+        <h2 class="panel-title">Контур</h2>
+        <div class="modes">
+          <div class="seg" id="trace-mode">
+            <button data-trace="fill" class="on">Заливкой</button>
+            <button data-trace="stroke">Штрихом</button>
+          </div>
+        </div>
+        <p class="hint-block" id="stroke-note" hidden>Осевая линия фигуры вместо
+          её границы: линейная иконка перестаёт быть двухконтурной «трубой»,
+          и толщину можно менять. Толщина у контура своя, померена по фигуре.</p>
+        <dl class="facts">
+          <div><dt>Контуров</dt><dd id="stat-contours">—</dd></div>
+          <div><dt>Узлов</dt><dd id="stat-nodes">—</dd></div>
+          <div><dt>Расхождение</dt><dd id="stat-fit">—</dd></div>
+          <div><dt>Счёт</dt><dd id="stat-ms">—</dd></div>
+        </dl>
+        <div class="modes">
+          <label><input type="checkbox" id="show-fill"> заливка</label>
+          <label><input type="checkbox" id="show-nodes" checked> узлы</label>
+        </div>
+        <div id="controls-curves"></div>
+
+        <div id="prim-box" hidden>
+          <h2 class="panel-title">Похоже на</h2>
+          <div class="ctl">
+            <div class="ctl-head"><label for="prim-share">Допуск сходства</label></div>
+            <span class="ctl-value" id="prim-share-val">3%</span>
+            <input id="prim-share" type="range" min="0.5" max="10" step="0.5" value="3">
+          </div>
+          <div id="prim-list" class="prim-list"></div>
+        </div>
+
+      </section>
+
+      <!-- Правка контура общая: ей всё равно, чей контур — иконки или буквы. -->
+      <section class="step-panel" id="edit-tools" hidden>
+        <h2 class="panel-title">Правка</h2>
+        <div class="btn-row glyph-edit-row" id="glyph-edit-row" hidden>
+          <button id="gl-done" class="btn">Готово</button>
+          <button id="gl-shape-reset" class="btn">Обвести заново</button>
+        </div>
+        <p class="sel-count"><span id="sel-count">ничего не выделено</span></p>
+        <div class="btn-row">
+          <button id="ed-smooth" class="btn">Гладкий</button>
+          <button id="ed-corner" class="btn">Угловой</button>
+          <button id="ed-delete" class="btn">Удалить</button>
+        </div>
+        <div class="btn-row">
+          <button id="ed-undo" class="btn">Отменить</button>
+          <button id="ed-redo" class="btn">Повторить</button>
+          <label class="snap"><input type="checkbox" id="ed-snap"> привязка ½ px</label>
+        </div>
+        <p class="hint-block">Тянуть — двигать. Двойной щелчок по узлу меняет тип,
+          по кривой — вставляет узел. <kbd>Alt</kbd> при тяге рычага разрывает
+          симметрию, <kbd>Ctrl</kbd> добавляет к выделению, <kbd>Del</kbd> удаляет.</p>
+      </section>
+
+      <section class="step-panel" data-step="glyphs">
+        <h2 class="panel-title">Буквы</h2>
+        <label class="field">
+          <span>Что написано на картинке</span>
+          <textarea id="text-in" rows="3" spellcheck="false"
+            placeholder="Съешь ещё этих мягких французских булок, да выпей же чаю"></textarea>
+        </label>
+        <p id="assign-note" class="note"></p>
+        <dl class="facts">
+          <div><dt>Компонент</dt><dd id="glyph-comps">—</dd></div>
+          <div><dt>Букв</dt><dd id="glyph-count">—</dd></div>
+          <div><dt>Узлов</dt><dd id="glyph-nodes">—</dd></div>
+          <div><dt>Расхождение</dt><dd id="glyph-fit">—</dd></div>
+        </dl>
+        <div class="btn-row">
+          <label class="char-field">символ
+            <input id="char-in" type="text" maxlength="2" autocomplete="off" spellcheck="false">
+          </label>
+          <button id="gl-merge" class="btn">Объединить</button>
+          <button id="gl-split" class="btn">Разделить</button>
+        </div>
+        <button id="gl-edit" class="btn wide">Править контур буквы</button>
+        <button id="gl-reset" class="btn wide">Сбросить группы</button>
+        <div class="ctl">
+          <div class="ctl-head"><label for="tile-zoom">Размер плиток</label></div>
+          <span class="ctl-value" id="tile-zoom-val">авто</span>
+          <input id="tile-zoom" type="range" min="0" max="8" step="1" value="0">
+        </div>
+        <div id="controls-curves-font"></div>
+        <p class="hint-block">Щелчок выбирает букву, двойной открывает её
+          контур на правку. <kbd>Ctrl</kbd> добавляет к выделению; поле
+          «символ» правит привязку выбранной и переходит к следующей.</p>
+      </section>
+
+      <section class="step-panel" data-step="metrics">
+        <h2 class="panel-title">Метрики</h2>
+        <div class="strip-box"><svg id="strip" class="strip"></svg></div>
+        <dl class="facts">
+          <div><dt>Прописные</dt><dd id="m-cap">—</dd></div>
+          <div><dt>Строчные</dt><dd id="m-x">—</dd></div>
+          <div><dt>Восходящая</dt><dd id="m-asc">—</dd></div>
+          <div><dt>Выносные</dt><dd id="m-desc">—</dd></div>
+          <div><dt>В пикселе</dt><dd id="m-scale">—</dd></div>
+        </dl>
+        <div id="m-controls"></div>
+        <button id="m-guess" class="btn wide">Определить заново</button>
+        <p class="hint-block">Четыре направляющие тянутся мышью прямо по кропу.
+          Догадка по габаритам букв — только начало: последнее слово за глазом.</p>
+      </section>
+
+      <section class="step-panel" data-step="font">
+        <h2 class="panel-title">Шрифт</h2>
+        <label class="field">
+          <span>Название</span>
+          <input id="font-name" type="text" value="Пантограф" spellcheck="false">
+        </label>
+        <label class="field">
+          <span>Проба пера</span>
+          <input id="font-sample-in" type="text" value="Съешь ещё этих мягких французских булок, да выпей же чаю" spellcheck="false">
+        </label>
+        <div class="ctl">
+          <div class="ctl-head"><label for="sample-size">Кегль пробы</label></div>
+          <span class="ctl-value" id="sample-size-val">48 px</span>
+          <input id="sample-size" type="range" min="16" max="160" step="4" value="48">
+        </div>
+        <p id="font-note" class="note"></p>
+        <button id="font-save" class="btn wide">Скачать .otf</button>
+
+        <h2 class="panel-title">Покрытие</h2>
+        <div id="alpha-pick" class="alpha-pick"></div>
+        <div id="cover-out" class="cover-out"></div>
+      </section>
+
+      <section class="step-panel" data-step="export">
+        <h2 class="panel-title">Экспорт</h2>
+        <dl class="facts">
+          <div><dt>Контуров</dt><dd id="ex-contours">—</dd></div>
+          <div><dt>Узлов</dt><dd id="ex-nodes">—</dd></div>
+        </dl>
+        <div class="modes">
+          <div class="seg" id="fill-mode">
+            <button data-fill="flat" class="on">Плоским чёрным</button>
+            <button data-fill="color">Цветом с картинки</button>
+          </div>
+        </div>
+        <button id="save-svg" class="btn wide">Скачать SVG</button>
+        <p class="hint-block">Один файл в координатах кропа: слой — группа,
+          она же слой в Inkscape. Плоский чёрный — для иконки, которую потом
+          красят стилями; цвет с картинки — когда нужно сохранить вид.</p>
+      </section>
+
+      <p id="detached" class="warn detached" hidden>
+        Контур отчуждён: он теперь ваш, и настройки заморожены.
+        <button id="retrace" class="btn wide">Перетрассировать заново</button>
+      </p>
+
+      <section class="step-panel always">
+        <h2 class="panel-title">Проект</h2>
+        <div class="btn-row">
+          <button id="pr-export" class="btn">Выгрузить</button>
+          <label class="btn" for="pr-import-file">Загрузить</label>
+          <input id="pr-import-file" type="file" accept=".zip,application/zip" hidden>
+        </div>
+        <button id="pr-pack" class="btn wide">Пакет SVG</button>
+        <p id="pr-note" class="note"></p>
+      </section>
+
+    </div>
+  </aside>
+</main>
+
+<div id="drop-veil" class="drop-veil" hidden>
+  <p>Отпустите — картинка откроется</p>
+</div>
+
+<footer class="statusbar">
+  <span id="busy" class="busy" hidden>обвожу…</span>
+  <span id="status"></span>
+  <span class="hints">
+    колесо — зум · Shift+перетаскивание или средняя кнопка — панорама ·
+    <kbd>0</kbd> вписать · <kbd>Esc</kbd> снять выделение
+  </span>
+</footer>
+
+<script type="module" src="js/ui/app.js"></script>
+</body>
+</html>

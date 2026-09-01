@@ -1,0 +1,116 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Пантограф — браузерные проверки</title>
+<style>
+  body { font: 13px/1.6 ui-monospace, Consolas, monospace; margin: 24px; }
+  pre { white-space: pre-wrap; }
+  .fail { color: #c0392b; font-weight: 700; }
+</style>
+<body>
+<h1 style="font:600 16px system-ui">Браузерные проверки</h1>
+<p style="font:13px system-ui;color:#666">Требуют сервера: <code>npm run serve</code>, затем открыть
+<code>/tests/browser.html</code>. Проверяют то, что нельзя проверить в node: канву, кроп
+и антиалиасинг настоящего браузерного рендера. Внешних картинок не требуют.</p>
+<pre id="out">…</pre>
+
+<script type="module">
+import { createViewport } from '../js/ui/viewport.js';
+import { cropFrom, toCanvas, pixelZoom } from '../js/prep/crop.js';
+import * as store from '../js/store.js';
+
+const log = [];
+let failed = 0;
+const ok = (c, m) => { if (!c) failed += 1; log.push((c ? 'ok   ' : 'FAIL ') + m); };
+const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
+
+// ─── viewport ───────────────────────────────────────────────────────────────
+const vp = createViewport();
+vp.setContentSize(40, 30);
+vp.setViewSize(400, 300);
+vp.fit(0);
+ok(near(vp.scale, 10), `fit даёт масштаб 10, получено ${vp.scale}`);
+
+const rt = vp.toImage(vp.toScreen({ x: 12.5, y: 7.25 }));
+ok(near(rt.x, 12.5) && near(rt.y, 7.25), 'toScreen∘toImage — тождество');
+
+const anchor = { x: 137, y: 91 };
+const before = vp.toImage(anchor);
+vp.zoomAt(anchor, 2.5);
+const after = vp.toImage(anchor);
+ok(near(before.x, after.x) && near(before.y, after.y), 'zoomAt держит точку под курсором');
+
+vp.setScale(1000); ok(vp.scale === 64, `масштаб зажат сверху, получено ${vp.scale}`);
+vp.setScale(0.0001); ok(vp.scale === 0.05, `масштаб зажат снизу, получено ${vp.scale}`);
+
+// ─── cropFrom на синтетике ──────────────────────────────────────────────────
+const c = document.createElement('canvas');
+c.width = 40; c.height = 30;
+const g = c.getContext('2d');
+g.fillStyle = '#000'; g.fillRect(0, 0, 40, 30);
+g.fillStyle = '#f00'; g.fillRect(5, 5, 10, 10);
+
+const id = cropFrom(c, { x: 5, y: 5, w: 10, h: 10 });
+const px = (d, w, x, y) => [...d.data.slice((y * w + x) * 4, (y * w + x) * 4 + 3)].join(',');
+ok(id.width === 10 && id.height === 10, `кроп 10×10, получено ${id.width}×${id.height}`);
+ok(px(id, 10, 0, 0) === '255,0,0', 'начало координат кропа — левый верх выделения');
+ok(px(id, 10, 9, 9) === '255,0,0', 'правый нижний пиксель попадает внутрь');
+
+let threw = false;
+try { cropFrom(c, { x: 0, y: 0, w: 0, h: 5 }); } catch { threw = true; }
+ok(threw, 'пустой прямоугольник отвергается');
+ok(toCanvas(id).width === 10, 'toCanvas сохраняет размер');
+ok(pixelZoom({ width: 21, height: 19 }, { w: 260, h: 220 }) === 11, 'pixelZoom целый');
+ok(pixelZoom({ width: 900, height: 900 }, { w: 260, h: 220 }) === 1, 'pixelZoom не меньше единицы');
+
+// ─── store ──────────────────────────────────────────────────────────────────
+let seen = 0;
+const un = store.subscribe('crop', () => { seen += 1; });
+store.set('crop', { rect: { x: 0, y: 0, w: 1, h: 1 }, imageData: id });
+ok(seen === 1 && store.get('crop').rect.w === 1, 'store оповещает и хранит');
+un();
+store.set('crop', null);
+ok(seen === 1, 'отписка работает');
+let bad = false;
+try { store.get('нету'); } catch { bad = true; }
+ok(bad, 'неизвестная тема — ошибка, а не undefined');
+
+// ─── кроп на антиалиасном рендере ───────────────────────────────────────────
+// Внешней картинки нет намеренно: тонкоштриховую иконку с мягкими краями
+// рисует сам браузер — кольцо линией в два пикселя. Проверяется то же, ради
+// чего затевался порядок конвейера: у тонкого штриха БОЛЬШИНСТВО пикселей —
+// краевые полутона, и положение фигуры в кропе не съезжает.
+const ac = document.createElement('canvas');
+ac.width = 60; ac.height = 50;
+const ag = ac.getContext('2d');
+ag.fillStyle = 'rgb(15 16 18)'; ag.fillRect(0, 0, 60, 50);
+ag.strokeStyle = 'rgb(232 183 90)'; ag.lineWidth = 2;
+ag.beginPath(); ag.arc(30, 25, 9, 0, Math.PI * 2); ag.stroke();
+
+const icon = cropFrom(ac, { x: 15, y: 10, w: 30, h: 30 });
+const bg = [15, 16, 18];
+const fg = [232, 183, 90];
+const den = fg.reduce((s, v, i) => s + (v - bg[i]) ** 2, 0);
+let full = 0, part = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+for (let y = 0; y < icon.height; y += 1) {
+  for (let x = 0; x < icon.width; x += 1) {
+    const i = (y * icon.width + x) * 4;
+    const a = Math.max(0, Math.min(1,
+      [0, 1, 2].reduce((s, k) => s + (icon.data[i + k] - bg[k]) * (fg[k] - bg[k]), 0) / den));
+    if (a > 0.15) {
+      if (a > 0.85) full += 1; else part += 1;
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+  }
+}
+// Кольцо радиуса 9 линией 2 px с центром (30,25); в кропе центр (15,15).
+ok(Math.abs((x0 + x1) / 2 - 15) <= 1 && Math.abs((y0 + y1) / 2 - 15) <= 1,
+   `центр кольца в кропе около (15,15), получено (${(x0+x1)/2},${(y0+y1)/2})`);
+ok(x1 - x0 + 1 >= 19 && x1 - x0 + 1 <= 22, `диаметр с краями ≈ 20, получено ${x1 - x0 + 1}`);
+const share = part / Math.max(1, full + part);
+ok(share > 0.5, `у тонкого штриха краевых пикселей большинство, получено ${Math.round(share * 100)}%`);
+
+document.getElementById('out').innerHTML =
+  log.map((l) => l.startsWith('FAIL') ? `<span class="fail">${l}</span>` : l).join('\n')
+  + `\n\n${failed ? `ПРОВАЛЕНО ${failed} из ${log.length}` : `Пройдено ${log.length} проверок.`}`;
+document.title = failed ? `✗ ${failed}` : `✓ ${log.length}`;
+</script>

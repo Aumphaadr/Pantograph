@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8">
+<style>body{margin:0;background:#14171a;color:#e3e7ea;font:13px system-ui;padding:16px}
+h1{font-size:14px;color:#6ebee0;margin:0 0 12px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.c{background:#1a1f24;border:1px solid #2b3239;border-radius:5px;padding:8px;width:186px}
+.n{font:10px ui-monospace,monospace;color:#9ca6b1;margin-bottom:6px}
+.b{position:relative;display:grid;background:#0d0f11;border-radius:3px;width:168px;height:168px}
+canvas,svg{grid-area:1/1;display:block}
+.s{margin-top:6px;font:10px ui-monospace,monospace;color:#9ca6b1;white-space:pre;line-height:1.5}
+.bad{color:#e0806a}</style>
+<body><p style="color:#9ca6b1;font-size:12px;margin:0 0 12px;max-width:72ch;line-height:1.5">
+Ручная проверка на крупных исходниках. Требует сервера: <code>npm run serve</code>,
+затем <code>/tests/masters-visual.html</code>. Допуски здесь берутся соразмерными
+кропу — так же, как их подставляет приложение.</p>
+<h1>Мастера 1254 px с соразмерными допусками</h1><div class="row" id="r"></div>
+<script type="module">
+import { colorDistance, upscale, threshold, morph, capScale, guessBackground, guessForeground } from '../js/prep/mask.js';
+import { traceMask } from '../js/trace/trace.js';
+import { countNodes } from '../js/core/path.js';
+import { toPathData } from '../js/export/svg.js';
+import { defaults } from '../js/ui/params.js';
+const P=defaults(), r=document.getElementById('r'), BASE=48;
+for (const n of [
+    '00-brand-emblem-master.png',
+    '01-home-master.png',
+    '02-map-pin-master.png',
+    '03-folder-master.png',
+    '04-image-master.png',
+    '05-play-square-master.png',
+    '06-gamepad-master.png',
+    '07-edit-square-master.png',
+    '08-user-master.png',
+    '09-briefcase-master.png',
+    '10-institution-master.png',
+    '11-document-master.png',
+    '12-paperclip-master.png',
+    '13-teacup-master.png',
+    '14-shield-mark-master.png',
+]) {
+  const img=new Image(); img.src='../icon-masters/'+n; await img.decode();
+  const c0=document.createElement('canvas'); c0.width=img.naturalWidth;c0.height=img.naturalHeight;
+  const g0=c0.getContext('2d',{willReadFrequently:true}); g0.drawImage(img,0,0);
+  const src=g0.getImageData(0,0,c0.width,c0.height);
+  const bg=guessBackground(src), fg=guessForeground(src,bg);
+  const f=Math.min(src.width,src.height)/BASE;
+  const k=capScale(src.width,src.height,P.upscale);
+  let m=colorDistance(src,{fg,bg,tolerance:P.tolerance});
+  m=upscale(m,k); m=threshold(m,P.level); m=morph(m,{});
+  const lit=[...m.data].filter(v=>v>0).length;
+  const sh=traceMask(m,k,{level:0.5,cornerAngle:P.cornerAngle,simplify:P.simplify*f,
+    fitError:P.fitError*f,cornerSpan:P.cornerSpan*f,minArea:P.minArea*f*f});
+  const W=168,H=168;
+  const card=document.createElement('div'); card.className='c';
+  const nodes=countNodes(sh);
+  card.innerHTML=`<div class="n">${n.replace('-master.png','')}</div>
+    <div class="b"><canvas width="${W}" height="${H}"></canvas>
+    <svg width="${W}" height="${H}" viewBox="0 0 ${src.width} ${src.height}"></svg></div>
+    <div class="s"><span class="${nodes?'':'bad'}">узлов ${nodes}</span> · контуров ${sh.contours.length}
+маска ${(lit/m.data.length*100).toFixed(1)}% зажжено
+штрих ${fg.join(',')}</div>`;
+  const g=card.querySelector('canvas').getContext('2d');
+  g.drawImage(c0,0,0,W,H);
+  card.querySelector('svg').innerHTML=`<path d="${toPathData(sh,2)}" fill="rgb(110 190 224 / .3)"
+    stroke="#6ebee0" stroke-width="1.4" vector-effect="non-scaling-stroke" fill-rule="nonzero"/>`;
+  r.append(card);
+}
+</script>

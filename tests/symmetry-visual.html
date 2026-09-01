@@ -1,0 +1,62 @@
+<!doctype html><meta charset="utf-8">
+<style>body{margin:0;background:#14171a;color:#e3e7ea;font:13px system-ui;padding:16px}
+h1{font-size:14px;color:#6ebee0;margin:0 0 12px}
+.row{display:flex;gap:14px;flex-wrap:wrap}
+.c{background:#1a1f24;border:1px solid #2b3239;border-radius:5px;padding:8px;width:250px}
+.n{font:10px ui-monospace,monospace;color:#9ca6b1;margin-bottom:6px}
+.pair{display:flex;gap:6px}
+.b{position:relative;display:grid;background:#0d0f11;border-radius:3px}
+canvas,svg{grid-area:1/1;display:block}canvas{image-rendering:pixelated}
+.s{margin-top:6px;font:10px ui-monospace,monospace;color:#9ca6b1;white-space:pre;line-height:1.5}
+.good{color:#7fbf9c}.bad{color:#e0806a}</style>
+<body>
+<p style="color:#9ca6b1;font-size:12px;margin:0 0 12px;max-width:70ch;line-height:1.5">
+Ручная проверка симметризации. Требует сервера: <code>npm run serve</code>, затем
+<code>/tests/symmetry-visual.html</code>. Оценка выше 60% — ось есть, ниже —
+симметризация фигуру испортит.</p>
+<h1>Симметризация: слева как есть, справа по вертикальной оси</h1><div class="row" id="r"></div>
+<script type="module">
+import { colorDistance, upscale, threshold, morph, capScale, guessBackground, guessForeground } from '../js/prep/mask.js';
+import { symmetrize, mirrorX, mismatch, findAxisX, scoreX } from '../js/prep/symmetry.js';
+import { traceMask } from '../js/trace/trace.js';
+import { countNodes } from '../js/core/path.js';
+import { toPathData } from '../js/export/svg.js';
+import { defaults } from '../js/ui/params.js';
+const P=defaults(), r=document.getElementById('r');
+for (const name of ['01-home.png','08-user.png','14-shield-mark.png','06-gamepad.png','02-map-pin.png','03-folder.png']) {
+  const img=new Image(); img.src='../icon-crops/'+name; await img.decode();
+  const c0=document.createElement('canvas'); c0.width=img.naturalWidth;c0.height=img.naturalHeight;
+  const g0=c0.getContext('2d',{willReadFrequently:true}); g0.drawImage(img,0,0);
+  const src=g0.getImageData(0,0,c0.width,c0.height);
+  const bg=guessBackground(src), fg=guessForeground(src,bg);
+  const k=capScale(src.width,src.height,P.upscale);
+  const soft=upscale(colorDistance(src,{fg,bg,tolerance:P.tolerance}),k);
+  const before=scoreX(soft);
+  const variants=[];
+  for (const axis of ['none','x']) {
+    const sym=symmetrize(soft,{axis,mode:'average'});
+    let m=threshold(sym.mask,P.level); m=morph(m,{});
+    variants.push({sh:traceMask(m,k,{level:0.5,simplify:P.simplify,cornerAngle:P.cornerAngle,
+      cornerSpan:P.cornerSpan,fitError:P.fitError,minArea:P.minArea}), sym});
+  }
+  const Z=Math.max(1,Math.floor(112/Math.max(src.width,src.height)));
+  const W=src.width*Z,H=src.height*Z;
+  const card=document.createElement('div'); card.className='c';
+  const pct=Math.round(before.score*100);
+  card.innerHTML=`<div class="n">${name}</div><div class="pair">
+    ${[0,1].map(()=>`<div class="b" style="width:${W}px;height:${H}px">
+      <canvas width="${W}" height="${H}"></canvas>
+      <svg width="${W}" height="${H}" viewBox="0 0 ${src.width} ${src.height}"></svg></div>`).join('')}
+    </div>
+    <div class="s">симметрия <span class="${pct>60?'good':'bad'}">${pct}%</span> · ось ${(before.axis/k).toFixed(1)} px
+узлов ${countNodes(variants[0].sh)} → ${countNodes(variants[1].sh)}</div>`;
+  card.querySelectorAll('canvas').forEach(cv=>{const g=cv.getContext('2d');
+    g.imageSmoothingEnabled=false; g.drawImage(c0,0,0,W,H);});
+  card.querySelectorAll('svg').forEach((svg,i)=>{
+    svg.innerHTML=`<path d="${toPathData(variants[i].sh,3)}" fill="rgb(110 190 224 / .28)"
+      stroke="#6ebee0" stroke-width="1.1" vector-effect="non-scaling-stroke" fill-rule="nonzero"/>`
+      + (i===1 ? `<line x1="${(variants[1].sym.axisX??0)/k}" y1="0" x2="${(variants[1].sym.axisX??0)/k}" y2="${src.height}" stroke="#e0806a" stroke-width="0.8" vector-effect="non-scaling-stroke" stroke-dasharray="2 2"/>` : '');
+  });
+  r.append(card);
+}
+</script>

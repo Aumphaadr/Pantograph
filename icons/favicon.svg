@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!--
+    Сам инструмент: параллелограммное звено пантографа. Неподвижная опора,
+    остриё и перо лежат на одной прямой — она же диагональ параллелограмма.
+    Геометрия не выдумана: на ней пантограф и работает. Средняя точка убрана
+    намеренно: на шестнадцати пикселях она забивала диагональ.
+  -->
+  <style>
+    .bar  { fill: none; stroke: #4E9CBE; stroke-width: 3.2;
+            stroke-linejoin: round; stroke-linecap: round; }
+    .rod  { fill: none; stroke: #17627F; stroke-width: 2;
+            stroke-linecap: round; opacity: 0.75; }
+    .pin  { fill: #17627F; }
+    @media (prefers-color-scheme: dark) {
+      .bar { stroke: #4E93B2; }
+      .rod { stroke: #6EBEE0; }
+      .pin { fill: #6EBEE0; }
+    }
+  </style>
+
+  <path class="rod" d="M4 21 L28 11"/>
+  <path class="bar" d="M4 21 L13 7 L28 11 L19 25 Z"/>
+
+  <circle class="pin" cx="4" cy="21" r="3.6"/>
+  <circle class="pin" cx="28" cy="11" r="3.6"/>
+</svg>
