@@ -8,7 +8,7 @@
 // гоняет и обычный цикл, и авто-подбор, которому нужно много прогонов подряд.
 
 import {
-  colorDistance, upscale, threshold, morph, capScale,
+  colorDistance, coverageToField, upscale, threshold, morph, capScale,
 } from '../prep/mask.js';
 import { layerMasks, unionMask } from '../prep/layers.js';
 import { symmetrize } from '../prep/symmetry.js';
@@ -68,8 +68,10 @@ function iconJob(params) {
 
   // Спор за пиксель решается ДО увеличения: на исходном растре, где он и
   // возник, а не на домысленных лишних пикселях.
+  // Покрытие → поле (см. coverageToField) до увеличения: линейная изолиния
+  // на прямой кромке тогда точна, а не промахивается на долю пикселя.
   let masks = layerMasks(crop, params.bg, inks, { exclusive: params.exclusive !== false })
-    .map((m) => upscale(m, k));
+    .map((m) => upscale(coverageToField(m), k));
 
   // Симметризация складывает ПОЛУТОНА, поэтому идёт до порога. Ось ищется
   // один раз по общей маске и навязывается каждому слою: иначе слои найдут
@@ -87,12 +89,12 @@ function iconJob(params) {
     }).mask);
   }
 
-  masks = masks.map((m) => morph(threshold(m, params.level), {
-    open: params.open, close: params.close,
-  }));
+  // Морфология — по серому полю, изолиния — на уровне порога по нему же:
+  // порог до обводки квантовал бы край к сетке увеличенной маски.
+  masks = masks.map((m) => morph(m, { open: params.open, close: params.close }));
 
   const traceOpts = {
-    level: 0.5,          // маска уже бинарная, изолиния идёт посередине
+    level: params.level,
     simplify: params.simplify,
     cornerAngle: params.cornerAngle,
     cornerSpan: params.cornerSpan,
@@ -101,10 +103,11 @@ function iconJob(params) {
   };
   // «Обвести как штрих» — отдельный ход, а не замена: заливка и осевая
   // линия отвечают на разные вопросы, и подменять одно другим молча нельзя.
+  // Скелету нужна битовая маска: он считает чернилами всё, что больше нуля.
   const shapes = params.stroke
-    ? masks.map((m) => traceStroke(m, k, traceOpts))
+    ? masks.map((m) => traceStroke(threshold(m, params.level), k, traceOpts))
     : masks.map((m) => traceMask(m, k, traceOpts));
-  const mask = unionMask(masks);
+  const mask = threshold(unionMask(masks), params.level);
 
   // Метрика: рендер всех слоёв разом против объединённой маски. У осевых
   // линий площади нет — там расхождение площади не определено, и это честно.
@@ -123,13 +126,11 @@ function iconJob(params) {
 function fontJob(params) {
   const ink = inksOf(params)[0];
   const k = capScale(crop.width, crop.height, params.upscale);
-  const shown = morph(
-    threshold(upscale(colorDistance(crop, { fg: ink.fg, bg: params.bg, tolerance: ink.tolerance }), k), params.level),
-    { open: params.open, close: params.close },
-  );
   // Сегментация идёт по НЕувеличенной маске, а увеличение каждая буква
-  // получает своё — уже внутри buildGlyphs.
-  const soft = colorDistance(crop, { fg: ink.fg, bg: params.bg, tolerance: ink.tolerance });
+  // получает своё — уже внутри buildGlyphs. Поле одно на всё: и показ,
+  // и сегментация, и изолиния берутся с него же.
+  const soft = coverageToField(colorDistance(crop, { fg: ink.fg, bg: params.bg, tolerance: ink.tolerance }));
+  const shown = morph(threshold(upscale(soft, k), params.level), { open: params.open, close: params.close });
   const bin = morph(threshold(soft, params.level), { open: params.open, close: params.close });
   const built = buildGlyphs(soft, bin, params);
 
@@ -236,8 +237,8 @@ function run() {
         capped: r.k < Math.round(params.upscale),
         fit: fitStats(r.fit),
         symmetry: r.sym && {
-          axisX: r.sym.axisX === null ? null : r.sym.axisX / r.k,
-          axisY: r.sym.axisY === null ? null : r.sym.axisY / r.k,
+          axisX: r.sym.axisX === null ? null : (r.sym.axisX + 0.5) / r.k,
+          axisY: r.sym.axisY === null ? null : (r.sym.axisY + 0.5) / r.k,
           mismatch: Math.max(r.sym.mismatchX, r.sym.mismatchY),
           score: Math.max(r.sym.scoreX, r.sym.scoreY),
         },
@@ -287,12 +288,14 @@ async function tune(gen, params) {
       const r = fontJob(p);
       return {
         nodes: r.built.glyphs.reduce((s, g) => s + g.nodes, 0),
+        units: r.built.glyphs.length,
         drift: r.fit.drift, compBin: r.fit.compBin, compRen: r.fit.compRen,
       };
     }
     const r = iconJob(p);
     return {
       nodes: r.shapes.reduce((a, s2) => a + countNodes(s2), 0),
+      units: 1,
       drift: r.fit.drift, compBin: r.fit.compBin, compRen: r.fit.compRen,
     };
   };

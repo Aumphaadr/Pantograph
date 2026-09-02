@@ -6,7 +6,7 @@
 
 import { createMask, upscale, threshold, morph, capScale } from '../prep/mask.js';
 import { traceMask, DEFAULTS as TRACE } from '../trace/trace.js';
-import { regularizeShape } from '../trace/regularize.js';
+import { regularizeShape, dropCollinear } from '../trace/regularize.js';
 import { equalizeStems, mirrorReconcile } from './harmonize.js';
 import { symmetrize } from '../prep/symmetry.js';
 import { translateShape, countNodes } from '../core/path.js';
@@ -17,6 +17,7 @@ const TARGET_H = 120;   // до какой высоты в пикселях до
 const PAD = 2;
 const BASE_H = 48;      // размер буквы, под который рассчитаны допуски
 const NOISE_SHARE = 0.01;   // мельче сотой доли от обычной буквы — это крапина
+const CORNER_WINDOW_MIN = 2; // окно угла не мельче этого, пиксели исходника
 
 const median = (v) => {
   if (!v.length) return 0;
@@ -95,14 +96,22 @@ export function traceGroup(ids, components, params = {}) {
     }
   }
 
-  m = threshold(m, params.level ?? 0.5);
+  // Морфология и изолиния идут по СЕРОМУ полю: положение края закодировано
+  // в дробных значениях, и порог до обводки квантовал бы его к сетке
+  // увеличенной маски — четверть пикселя исходника при увеличении в четыре.
+  // Сверка с настоящими шрифтами показала: именно эта четверть ставила
+  // лишние узлы на прямых кромках и сбивала вершины углов. Бинарная маска
+  // остаётся для показа, сегментации и метрики — там она и нужна.
   m = morph(m, { open: params.open ?? 0, close: params.close ?? 0 });
 
   let local = traceMask(m, k, {
-    level: 0.5,
+    level: params.level ?? 0.5,
     simplify: (params.simplify ?? TRACE.simplify) * f,
     cornerAngle: params.cornerAngle ?? TRACE.cornerAngle,
-    cornerSpan: (params.cornerSpan ?? TRACE.cornerSpan) * f,
+    // Окно угла не мельче двух пикселей исходника: скругление антиалиасинга
+    // не зависит от роста буквы, и окно, ужатое под мелкую букву, не видело
+    // бы за ним прямого угла.
+    cornerSpan: Math.max((params.cornerSpan ?? TRACE.cornerSpan) * f, CORNER_WINDOW_MIN),
     fitError: (params.fitError ?? TRACE.fitError) * f,
     minArea: (params.minArea ?? TRACE.minArea) * f * f,
   });
@@ -114,9 +123,10 @@ export function traceGroup(ids, components, params = {}) {
   let axes = [];
   if (params.tidy !== false) {
     const r = regularizeShape(local, {
-      lineTol: (params.fitError ?? TRACE.fitError) * f,
+      lineTol: (params.fitError ?? TRACE.fitError) * f * (params.canonRatio ?? 1),
       axisDeg: 4,
       primShare: 0.025,
+      primTol: (params.fitError ?? TRACE.fitError) * f * (params.canonRatio ?? 1),
     });
     local = r;
     snapped = r.snapped;
@@ -124,14 +134,19 @@ export function traceGroup(ids, components, params = {}) {
     // а расхождение чаш — шум растра, не замысел. Свёртка маски уже сказала,
     // какие оси настоящие, — по ним контур пересобирается зеркально: худшая
     // сторона заменяется зеркалом лучшей, симметрия точна по построению.
-    const kinds = Object.keys(foldAxes);
+    const kinds = params.mirror === false ? [] : Object.keys(foldAxes);
     if (kinds.length) {
       const axesAt = {};
-      if (foldAxes.x !== undefined) axesAt.x = foldAxes.x / k;
-      if (foldAxes.y !== undefined) axesAt.y = foldAxes.y / k;
+      if (foldAxes.x !== undefined) axesAt.x = (foldAxes.x + 0.5) / k;
+      if (foldAxes.y !== undefined) axesAt.y = (foldAxes.y + 0.5) / k;
       axes = mirrorReconcile(local, kinds, axesAt, {
         tol: Math.max(1.0, (params.fitError ?? TRACE.fitError) * f * 1.3),
       });
+      // Осевые узлы на прямых кромках («I», «Т») после пересборки лишние;
+      // их снятие симметрию не трогает — узел стоит на самой оси.
+      if (axes.length) {
+        for (const c of local.contours) dropCollinear(c, (params.fitError ?? TRACE.fitError) * f);
+      }
     }
   }
 
@@ -174,8 +189,16 @@ export function buildGlyphs(soft, binary, params = {}, groups = null) {
     }
   });
   // Толщины штрихов — общие на весь лист: стойка «Н» и стойка «П» рисовались
-  // одним пером, и разнобой в полпикселя — шум, а не замысел.
-  if (params.tidy !== false) equalizeStems(glyphs, { cap: 0.8, spread: 1.8 });
+  // одним пером, и разнобой в пределах допуска обводки — шум, а не замысел.
+  // Дальше допуска грань не двигается: на настоящем шрифте стойки прописных,
+  // строчных и знаков разной толщины ПО ЗАМЫСЛУ, и прежний потолок в 0.8 px
+  // уводил «I» и «T» Lato от истины на 0.4 px — вчетверо хуже сырой обводки.
+  if (params.tidy !== false && params.stems !== false) {
+    const heights = glyphs.map((g) => g.bbox.h);
+    const fTyp = Math.max(0.25, Math.min(40, median(heights) / BASE_H));
+    const tol = (params.fitError ?? TRACE.fitError) * fTyp;
+    equalizeStems(glyphs, { cap: tol, spread: tol * 2 });
+  }
 
   return { components, glyphs, rows: rows.length };
 }

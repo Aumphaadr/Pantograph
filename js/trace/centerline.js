@@ -445,7 +445,7 @@ export function centerline(bin, scale = 1, opts = {}) {
   return paths
     .filter((chain) => chainLen(chain, w) >= o.minLength * scale)
     .map((chain) => ({
-      points: chain.map((i) => ({ x: (i % w) / scale, y: Math.floor(i / w) / scale })),
+      points: chain.map((i) => ({ x: ((i % w) + 0.5) / scale, y: (Math.floor(i / w) + 0.5) / scale })),
       // Толщина. Расстояние меряется до ЦЕНТРА ближайшего фонового пикселя,
       // а кромка штриха лежит на полпикселя ближе, — оттого вычитаем единицу:
       // у полосы в три пикселя иначе выходило четыре.

@@ -1,4 +1,4 @@
-import { createMask } from '../js/prep/mask.js';
+import { createMask, upscale, coverageToField } from '../js/prep/mask.js';
 import { isolines, detectCorners, traceMask, dechamfer, sharpenCorners, traceStroke } from '../js/trace/trace.js';
 import { contourArea, countNodes, flatten, signedArea, reverseContour } from '../js/core/path.js';
 import { rdp, rdpClosed } from '../js/core/simplify.js';
@@ -398,4 +398,42 @@ test('у traceStroke выход в crop-пространстве, как и у t
   const sh = traceStroke(m, 2);
   const xs = sh.contours[0].nodes.map((n) => n.p.x);
   eq(Math.max(...xs) <= 24, true, `x не выходит за кроп 24, получено ${Math.max(...xs)}`);
+});
+
+test('край стоит там, где покрытие говорит: отсчёт — центр пикселя', () => {
+  // Прямоугольник с субпиксельными краями: x ∈ [3.25, 9.6), y ∈ [2.5, 7.8).
+  // Покрытие пикселя — доля его площади под фигурой; изолиния должна вернуть
+  // именно эти границы, а не сдвинутые на полпикселя или на 0.5/scale.
+  const m = createMask(14, 12);
+  const cover = (a, b, i) => Math.max(0, Math.min(b, i + 1) - Math.max(a, i));
+  for (let y = 0; y < m.h; y += 1) {
+    for (let x = 0; x < m.w; x += 1) m.data[y * m.w + x] = cover(3.25, 9.6, x) * cover(2.5, 7.8, y);
+  }
+  for (const k of [1, 3, 4]) {
+    const shape = traceMask(upscale(coverageToField(m), k), k, { simplify: 0.1, fitError: 0.15 });
+    const pts = shape.contours.flatMap((c) => flatten(c, 8));
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    const near = (got, want, what) => eq(Math.abs(got - want) < 0.12, true,
+      `${what} при ×${k}: ${got.toFixed(3)} против ${want}`);
+    near(Math.min(...xs), 3.25, 'левый край');
+    near(Math.max(...xs), 9.6, 'правый край');
+    near(Math.min(...ys), 2.5, 'верх');
+    near(Math.max(...ys), 7.8, 'низ');
+  }
+});
+
+test('скруглённый антиалиасингом угол всё равно угол', () => {
+  // Прямоугольник 12×9 с покрытием по площади: у изолинии углы срезаны на
+  // полпикселя. Плечевой замер поворота должен дать ровно четыре угла.
+  const m = createMask(18, 15);
+  const cover = (a, b, i) => Math.max(0, Math.min(b, i + 1) - Math.max(a, i));
+  for (let y = 0; y < m.h; y += 1) {
+    for (let x = 0; x < m.w; x += 1) m.data[y * m.w + x] = cover(2.4, 14.7, x) * cover(2.6, 11.3, y);
+  }
+  const shape = traceMask(upscale(coverageToField(m), 4), 4, { cornerSpan: 2 });
+  const corners = shape.contours[0].nodes.filter((nd) => nd.type === 'corner');
+  eq(corners.length, 4, `углов ${corners.length}, узлов ${shape.contours[0].nodes.length}`);
+  const at = (x, y) => corners.some((nd) => Math.abs(nd.p.x - x) < 0.2 && Math.abs(nd.p.y - y) < 0.2);
+  eq(at(2.4, 2.6) && at(14.7, 11.3), true, 'вершины стоят в настоящих углах, не на срезе');
 });

@@ -57,8 +57,12 @@ export function regularizeContour(contour, opts = {}) {
   // detect ВСЕГДА возвращает «наименее плохой» примитив — прошёл ли он
   // допуск, лежит рядом во флаге fits. Без проверки флага буква «Н»
   // приводилась к своему наименее плохому кругу — целиком.
+  // Допуск примитива — тот же, что у всего канона (primTol), а не доля
+  // габарита: доля в 2.5 % от «О» в сорок пикселей — целый пиксель, и буква
+  // Lato, которая эллипсом не рисовалась, уводилась от истины на треть
+  // пикселя при узлах ровно на экстремумах, где ей и так хватило бы четырёх.
   if (o.primShare > 0 && contour.closed !== false && n >= 3) {
-    const match = detect(contour, o.primShare);
+    const match = detect(contour, o.primShare, { absolute: o.primTol ?? null });
     if (match && match.fits && SNAP_KINDS.has(match.kind)) {
       const snapped = apply(contour, match);
       if (contour.width !== undefined) snapped.width = contour.width;
@@ -553,7 +557,12 @@ function isStraight(a, b, eps) {
   return off(a.out, a) <= eps && off(b.in, a) <= eps;
 }
 
-function dropCollinear(contour, tol) {
+/**
+ * Узел между двумя прямыми, лежащий на их общей прямой, — лишний.
+ * Экспортируется: зеркальная пересборка ставит осевые узлы и на прямые
+ * кромки, где после неё им делать нечего.
+ */
+export function dropCollinear(contour, tol) {
   const closed = contour.closed !== false;
   for (let guard = 0; guard < contour.nodes.length; guard += 1) {
     const n = contour.nodes.length;

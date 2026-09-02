@@ -49,6 +49,22 @@ export function colorDistance(img, { fg, bg, tolerance = 60 }) {
   return out;
 }
 
+/**
+ * Покрытие → поле, по которому линейная изолиния точна на прямой кромке.
+ * Пиксель с покрытием c между полным и пустым имеет край в c от своего
+ * левого края; линейная интерполяция между центрами отсчётов ставит его
+ * в 0.5/(1−c) — с промахом до 0.08 px на четверти покрытия. Кривая g снимает
+ * промах: g(v) = 2v/(1+2v) при v<0.5, 0.5/(1.5−v) при v≥0.5; g(0.5)=0.5.
+ */
+export function coverageToField(mask) {
+  const out = createMask(mask.w, mask.h);
+  for (let i = 0; i < mask.data.length; i += 1) {
+    const v = mask.data[i];
+    out.data[i] = v < 0.5 ? (2 * v) / (1 + 2 * v) : 0.5 / (1.5 - v);
+  }
+  return out;
+}
+
 /** Средний цвет в квадрате со стороной 2r+1 — пипетка не должна ловить один случайный пиксель. */
 export function sampleColor(img, cx, cy, r = 1) {
   let sr = 0, sg = 0, sb = 0, n = 0;

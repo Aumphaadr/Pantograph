@@ -19,6 +19,7 @@ import {
   parseLines, autoAssign, roster, coverage, setCode, label, ALPHABETS,
 } from '../glyphs/assign.js';
 import { fitRows } from '../glyphs/merge.js';
+import { describeNodes, sheetPrior } from '../glyphs/priors.js';
 import {
   guessGuides, normalizeGuides, guessSpacing, buildGlyph, fontMetrics, scaleFor,
   DEFAULTS as MDEF,
@@ -1061,6 +1062,17 @@ function renderAssignNote(res) {
     const blank = codes.filter((c) => c == null).length;
     if (blank) bits.push(`глифов без символа: ${blank}`);
     if (!bits.length) bits.push('Каждой букве нашёлся символ.');
+    // Сколько узлов вышло против того, сколько обычно нужно этим знакам:
+    // сансериф и антиква задают коридор, а не норму.
+    if (glyphs) {
+      const known = codes.map((c, i) => (c == null ? null : [label(c), glyphs.glyphs[i]]))
+        .filter(Boolean);
+      const prior = sheetPrior(known.map(([ch]) => ch));
+      if (prior.known >= 5) {
+        const got = known.reduce((a, [, g]) => a + g.nodes, 0);
+        bits.push(`узлов у ${prior.known} букв: ${got}, обычно ${prior.sans} (сансериф) – ${prior.serif} (антиква)`);
+      }
+    }
   }
   el.assignNote.textContent = bits.join(' · ');
   el.assignNote.classList.toggle('warn-text',
@@ -1184,8 +1196,10 @@ function renderGlyphGrid() {
     const cell = document.createElement('div');
     cell.className = `glyph${glyphSel.has(i) ? ' on' : ''}`;
     cell.dataset.index = i;
+    // Число узлов — рядом с ожиданием по настоящим шрифтам: перебор и
+    // недобор видны, не открывая контур.
     cell.title = `буква ${i + 1}, строка ${g.row + 1}, ${g.bbox.w}×${g.bbox.h} px,`
-      + ` увеличение ×${g.scale}, узлов ${g.nodes}`;
+      + ` увеличение ×${g.scale}, ${describeNodes(label(codes[i]), g.nodes)}`;
 
     const stack = document.createElement('div');
     stack.className = 'stack';

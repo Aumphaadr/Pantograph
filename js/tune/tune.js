@@ -5,12 +5,23 @@
 // куда двигать параметры. Здесь только логика поиска, без воркера и DOM:
 // evaluate приходит снаружи, поэтому спуск тестируется на подделке.
 //
-// Целевая функция лексикографична: сперва увод края под потолок и ни одной
-// потерянной компоненты, затем минимум узлов, при равенстве — меньший увод.
-// Потолок не строже полупикселя и не строже исходного состояния: требовать
-// от подбора лучше, чем есть, честно, а невозможного — нет.
+// Целевая функция — баланс, а не «минимум узлов под потолком». Правило
+// владельца: если семь узлов дают сходство 96 %, а восемь — 99 %, брать
+// восемь. Поэтому узел стоит фиксированную долю увода края (NODE_COST,
+// пикселей на узел на одну букву), и минимизируется сумма
+//   увод + NODE_COST · узлов / букв.
+// Прежний лексикографический минимум узлов под потолком в полпикселя на
+// настоящем шрифте (Lato) сбрасывал четверть узлов, утраивая увод от
+// истинных контуров: 0.16 → 0.54 px. Потолок остаётся предохранителем от
+// патологий, но привязан к исходному состоянию, а не к полупикселю.
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/** Цена узла в пикселях увода края — на одну букву (у иконки букв одна). */
+export const NODE_COST = 0.02;
+
+/** Что минимизируется: увод плюс плата за узлы. units — сколько букв. */
+export const objective = (r) => r.drift + (NODE_COST * r.nodes) / Math.max(1, r.units ?? 1);
 
 /**
  * Оси поиска. У каждой — кандидаты вокруг текущего значения: на грубом
@@ -46,15 +57,17 @@ const better = (a, b, cap, comps) => {
   const vb = valid(b, cap, comps);
   if (va !== vb) return va;
   if (!va) return a.drift + Math.abs(a.compRen - a.compBin) < b.drift + Math.abs(b.compRen - b.compBin);
-  if (a.nodes !== b.nodes) return a.nodes < b.nodes;
-  return a.drift < b.drift;
+  const ja = objective(a);
+  const jb = objective(b);
+  if (Math.abs(ja - jb) > 1e-9) return ja < jb;
+  return a.nodes < b.nodes;
 };
 
 /**
  * Покоординатный спуск: два прохода, грубый и тонкий.
  *
  * @param {object} o
- * @param {(params:object)=>Promise<{nodes,share,compBin,compRen}>} o.evaluate
+ * @param {(params:object)=>Promise<{nodes,drift,compBin,compRen,units}>} o.evaluate
  * @param {object} o.base — исходные параметры (не меняются)
  * @param {()=>boolean} o.aborted — проверяется перед каждым прогоном
  * @param {(step:number,total:number,best:object)=>void} [o.onStep]
@@ -68,9 +81,10 @@ export async function descend({ evaluate, base, aborted = () => false, onStep })
   let step = 0;
   const baseline = await evaluate(base);
   step += 1;
-  // Потолок: не строже полупикселя увода края и не строже того, что уже
-  // есть. Компонент терять нельзя больше, чем теряется сейчас.
-  const cap = Math.max(0.5, baseline.drift);
+  // Потолок — предохранитель: увод не хуже полуторного исходного (и хотя бы
+  // на десятую пикселя свободы). Компонент терять нельзя больше, чем
+  // теряется сейчас.
+  const cap = Math.max(baseline.drift * 1.5, baseline.drift + 0.1);
   const comps = Math.abs(baseline.compRen - baseline.compBin);
 
   let bestParams = { ...base };

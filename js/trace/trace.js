@@ -11,7 +11,7 @@
 
 import { rdp, rdpClosed } from '../core/simplify.js';
 import { fitCurves, endTangent, norm, sub, dist } from '../core/bezier.js';
-import { orient, scaleShape, node } from '../core/path.js';
+import { orient, transform, node } from '../core/path.js';
 import { centerline, DEFAULTS as CDEF } from './centerline.js';
 import { pad } from '../prep/mask.js';
 
@@ -199,23 +199,37 @@ function fitLine(pts) {
  * пересечением прямых, проложенных по РОВНЫМ участкам с обеих сторон, а сами
  * ступеньки возле угла в расчёт не берутся.
  */
-export function sharpenCorners(poly, corners, reach, closed = true) {
-  if (!corners.length || reach <= 0) return poly;
+export function sharpenCorners(poly, corners, reach, closed = true, skip = reach * 0.35) {
+  if (!corners.length || reach <= 0 || skip >= reach) return poly;
   const n = poly.length;
   const at = (i) => poly[(i % n + n) % n];
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-  /** Точки ровного участка: от угла отступаем на skip, набираем до reach. */
+  /**
+   * Точки ровного участка: от угла отступаем на skip, набираем до reach.
+   * Берутся не вершины многоугольника, а точки ВДОЛЬ его рёбер с шагом:
+   * упрощение выкидывает все вершины прямой, и у чистой кромки внутри окна
+   * не оказывалось ни одной — плечо не строилось, и угол так и оставался
+   * на срезе антиалиасинга.
+   */
+  const stepLen = Math.max(0.5, reach / 8);
   const run = (c, dir, skip) => {
     const pts = [];
     let acc = 0;
+    let nextAt = skip;
     for (let step = 1; step <= n; step += 1) {
       const j = c + dir * step;
       if (!closed && (j < 0 || j > n - 1)) break;
-      acc += dist(at(j), at(j - dir));
-      if (acc < skip) continue;
-      if (acc > reach) break;
-      pts.push(at(j));
+      const from = at(j - dir);
+      const to = at(j);
+      const seg = dist(to, from);
+      while (nextAt <= acc + seg && nextAt <= reach) {
+        const t = seg > 0 ? (nextAt - acc) / seg : 0;
+        pts.push({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+        nextAt += stepLen;
+      }
+      acc += seg;
+      if (acc >= reach) break;
       if (corners.includes(((j % n) + n) % n)) break;   // до соседнего угла
     }
     return pts;
@@ -236,7 +250,6 @@ export function sharpenCorners(poly, corners, reach, closed = true) {
 
   const out = poly.map((p) => ({ ...p }));
   for (const c of corners) {
-    const skip = reach * 0.35;
     const ptsA = run(c, -1, skip);
     const ptsB = run(c, 1, skip);
     const a = fitLine(ptsA);
@@ -264,26 +277,43 @@ export function sharpenCorners(poly, corners, reach, closed = true) {
  * Раньше фаску случайно съедало упрощение — но тогда распознавание углов
  * зависело от настройки упрощения, чего быть не должно.
  *
+ * Меряются ПЛЕЧИ, а не хорды от самой вершины: антиалиасинг скругляет угол
+ * на полпикселя-пиксель исходника, и хорда, идущая из вершины, ныряет в это
+ * скругление — прямой угол буквы в тридцать пикселей ростом мерился в 50°
+ * и пропадал. Плечо начинается с отступа skip от вершины и тянется до span:
+ * у скруглённого угла обе прямые за скруглением видны как есть, и поворот
+ * выходит настоящий; у плавной дуги радиуса R поворот между плечами —
+ * около span/R, и порог его не пропускает.
+ *
  * Из окна следует и подавление немаксимумов: один геометрический угол даёт
  * несколько кандидатов подряд, и оставить надо самый крутой.
  */
+const SKIP_SHARE = 0.4;   // доля окна, отступаемая от вершины до начала плеча
+const SHARP_SKIP = 1;     // отступ плеча вершины от неё, пиксели исходника
+const SHARP_REACH = 2;    // длина плеча вершины, пиксели исходника
+
 export function detectCorners(poly, angleDeg, span = 1, cluster = span, closed = true) {
   const n = poly.length;
   if (n < 3) return [];
   const limit = Math.cos((angleDeg * Math.PI) / 180);
+  const skip = span * SKIP_SHARE;
 
-  /** Вершина на расстоянии не меньше span от i в направлении dir по контуру. */
-  const walk = (i, dir) => {
+  /** Точка на расстоянии d от вершины i вдоль контура в направлении dir. */
+  const along = (i, dir, d) => {
     let acc = 0;
     let j = i;
     for (let step = 0; step < n; step += 1) {
-      if (!closed && (j + dir < 0 || j + dir > n - 1)) break;
+      if (!closed && (j + dir < 0 || j + dir > n - 1)) return poly[j];
       const k = (j + dir + n) % n;
-      acc += dist(poly[k], poly[j]);
+      const seg = dist(poly[k], poly[j]);
+      if (acc + seg >= d) {
+        const t = seg > 0 ? (d - acc) / seg : 0;
+        return { x: poly[j].x + (poly[k].x - poly[j].x) * t, y: poly[j].y + (poly[k].y - poly[j].y) * t };
+      }
+      acc += seg;
       j = k;
-      if (acc >= span) break;
     }
-    return j;
+    return poly[j];
   };
 
   const turn = new Float64Array(n).fill(1);
@@ -291,8 +321,8 @@ export function detectCorners(poly, angleDeg, span = 1, cluster = span, closed =
   const from = closed ? 0 : 1;
   const upto = closed ? n : n - 1;
   for (let i = from; i < upto; i += 1) {
-    const a = norm(sub(poly[i], poly[walk(i, -1)]));
-    const b = norm(sub(poly[walk(i, 1)], poly[i]));
+    const a = norm(sub(along(i, -1, skip), along(i, -1, span)));
+    const b = norm(sub(along(i, 1, span), along(i, 1, skip)));
     turn[i] = a.x * b.x + a.y * b.y;   // 1 — идём прямо, 0 — поворот на 90°, −1 — разворот
   }
 
@@ -506,7 +536,7 @@ export const DEFAULTS = {
   level: 0.5,        // уровень изолинии
   simplify: 0.18,    // допуск упрощения, пиксели исходника
   cornerAngle: 68,   // круче этого поворот считается углом, градусы
-  cornerSpan: 1.2,   // на какой длине контура мерить поворот, пиксели исходника
+  cornerSpan: 2,     // на какой длине контура мерить поворот, пиксели исходника
   maxBevel: 3,       // фаска не длиннее этого срезается, пиксели МАСКИ
   fitError: 0.25,    // допустимое отклонение кривой от точек, пиксели исходника
   minArea: 4,        // мельче этого — мусор генерации, пиксели исходника
@@ -544,21 +574,32 @@ export function traceMask(mask, scale = 1, opts = {}) {
     // пикселя маски), а не на всё окно измерения.
     const corners = detectCorners(poly, o.cornerAngle, o.cornerSpan * scale,
       Math.min(o.cornerSpan * scale, 1.6));
-    // Углы ставятся в настоящую вершину, а не на ступеньку растра.
-    const sharp = sharpenCorners(poly, corners, o.cornerSpan * scale * 2.5);
+    // Углы ставятся в настоящую вершину, а не на ступеньку растра. Плечо
+    // начинается за скруглением антиалиасинга — с пикселя исходника от вершины:
+    // точки среза внутри плеча кренили прямую, и вершина промахивалась на
+    // 0.2 px, а подгонка ставила на кромке лишний узел.
+    // Плечо от пикселя до двух от вершины — в пикселях исходника, не окна:
+    // скругление антиалиасинга одно на все размеры, а длинное плечо у
+    // засечек упирается в соседний угол и не строится вовсе.
+    const sharp = sharpenCorners(poly, corners, SHARP_REACH * scale, true, SHARP_SKIP * scale);
     // Подгонка идёт по ПЛОТНОЙ изолинии с воткнутыми в неё вершинами углов:
     // упрощённый многоугольник — только для поиска углов (см. anchorCorners).
     // Радиус гашения — от окна угла: скруглённое плечо тянется дальше фаски,
     // и его свидетели прогибали прямые кромки внутрь, а у вершин заставляли
     // подгонку дробиться — узлы толпились по два-три на угол.
-    const { pts, cuts } = anchorCorners(loop, sharp, corners,
-      Math.max(2, o.maxBevel, o.cornerSpan * scale * 0.8));
+    // Не меньше пикселя исходника: антиалиасинг скругляет угол именно на
+    // столько, и уцелевшие точки скругления втягивали бы в подгонку лишний узел.
+    const { pts, cuts } = anchorCorners(loop, sharp, corners, Math.max(2, o.maxBevel, scale));
     const seamStep = Math.max(2, Math.round((o.cornerSpan * scale) / 2));
     const contour = fitClosed(pts, cuts, o.fitError * scale, seamStep);
     if (contour) contours.push(contour);
   }
 
-  return orient(scaleShape({ contours }, 1 / scale));
+  // Отсчёт маски — ЦЕНТР пикселя: изолиния считается между отсчётами
+  // (x, y), а пиксель x покрывает [x, x+1) — так же его видит и рендер
+  // расхождения, и SVG поверх картинки. Без этой половины контур лежал
+  // выше-левее истины на 0.5/scale — сверка с настоящими шрифтами показала.
+  return orient(transform({ contours }, (p) => ({ x: (p.x + 0.5) / scale, y: (p.y + 0.5) / scale })));
 }
 
 /** Разомкнутая цепочка → контур. Отличий от замкнутой два: концы никуда не
