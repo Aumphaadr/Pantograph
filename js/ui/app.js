@@ -148,10 +148,28 @@ let traceKind = 'fill';     // 'fill' | 'stroke' | 'assemble' — сборка �
 const cur = () => layers[active] || null;
 let tolSync = null;         // перечитать ползунок допуска с активного слоя
 
-/** Единственная точка записи контура: две копии одного разъезжаются. */
+/**
+ * Единственная точка записи контура: две копии одного разъезжаются.
+ *
+ * Правка живёт в локальном `shape`, а экспорт, сводка и сохранение читают
+ * СЛОЙ. Пока правки писались только в `shape`, в файл уходила версия до
+ * правок — молча, без единой ошибки. Поэтому все ходы редактора идут сюда.
+ *
+ * В правке буквы контур принадлежит глифу, а не слою: там за запись
+ * отвечает ownEdit, и слой трогать нельзя.
+ */
 function setShape(next) {
   shape = next;
-  if (layers[active]) layers[active].shape = next;
+  if (glyphEdit >= 0) return;
+  const L = layers[active];
+  if (!L) return;
+  L.shape = next;
+  // Сборка из примитивов описывает контур ДО правки: держать её дальше —
+  // значит отдать в SVG не то, что человек видит. Экспорт вернётся к кривым.
+  L.assembly = null;
+  // Сводка шага «Экспорт» считает по слоям: без пересчёта она показывала бы
+  // числа до правки — то же тихое враньё, что и сам экспорт.
+  updateStats();
 }
 let selection = new Set();
 const history = createHistory();
@@ -267,6 +285,10 @@ async function loadBlob(blob, name) {
     document.body.classList.add('has-image');
     el.imgName.textContent = name;
     el.imgSize.textContent = `${bitmap.width} × ${bitmap.height}`;
+    // Новая картинка — снова первый шаг: работать с ней всё равно начинают
+    // с кропа, а брошенный файл на шаге «Контур» выглядел как «ничего не
+    // произошло» — стол там показывает прежнюю обводку.
+    setStep('image');
     say(null);
   } catch {
     say('Не удалось прочитать картинку. Нужен PNG, JPEG или WebP.', true);
@@ -1580,7 +1602,7 @@ const editor = createEditorTool({
   get: () => ({ shape, selection, snap: el.edSnap.checked ? 0.5 : 0 }),
   set: (patch) => {
     if (patch.shape && patch.shape !== shape) {
-      shape = patch.shape;
+      setShape(patch.shape);
       ownEdit();
     }
     if (patch.selection) selection = patch.selection;
@@ -1748,9 +1770,9 @@ function renderPrimitives() {
     btn.className = 'btn';
     btn.textContent = 'Привести';
     btn.addEventListener('click', () => {
-      shape = {
+      setShape({
         contours: shape.contours.map((x, i) => (i === ci ? applyPrimitive(x, match) : x)),
-      };
+      });
       selection = new Set();
       ownEdit();
       history.push(shape);
@@ -1784,7 +1806,7 @@ function applyToSelection(fn) {
   if (!selection.size || !shape) return;
   let next = shape;
   for (const k of selection) next = fn(next, parseKey(k));
-  shape = next;
+  setShape(next);
   ownEdit();
   history.push(shape);
   draw();
@@ -1797,7 +1819,7 @@ el.edCorner.addEventListener('click', () => applyToSelection((sh, at) => setNode
 
 el.edDelete.addEventListener('click', () => {
   if (!selection.size || !shape) return;
-  shape = removeNodes(shape, [...selection]);
+  setShape(removeNodes(shape, [...selection]));
   selection = new Set();
   ownEdit();
   history.push(shape);
@@ -1808,7 +1830,10 @@ el.edDelete.addEventListener('click', () => {
 const stepHistory = (fn) => {
   const next = fn();
   if (!next) return;
-  shape = next;
+  // Отмена — такая же запись контура, как правка: слой обязан её увидеть,
+  // иначе экспорт отдаст то, что человек только что отменил.
+  setShape(next);
+  ownEdit();
   selection = new Set();
   draw();
   updateEditPanel();
