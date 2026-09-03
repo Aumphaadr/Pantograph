@@ -7,7 +7,7 @@ import { cropFrom, toCanvas, pixelZoom } from '../prep/crop.js';
 import { handlePoints, HANDLES } from '../core/geom.js';
 import { sampleColor, guessBackground, guessForeground } from '../prep/mask.js';
 import { guessInks } from '../prep/layers.js';
-import { toPathData, toSvgDocument, toLayeredSvg } from '../export/svg.js';
+import { toPathData, toSvgDocument, toLayeredSvg, toAssemblySvg } from '../export/svg.js';
 import { transform, translateShape, countNodes } from '../core/path.js';
 import { CONTROLS, defaults, groups, scaleControls, sizeFactor } from './params.js';
 import { createHistory } from '../editor/history.js';
@@ -67,7 +67,7 @@ const el = {
   pickBg: $('pick-bg'), swBg: $('sw-bg'),
   layerList: $('layer-list'), layAdd: $('lay-add'), layGuess: $('lay-guess'),
   layExclusive: $('lay-exclusive'), fillMode: $('fill-mode'),
-  traceMode: $('trace-mode'), strokeNote: $('stroke-note'),
+  traceMode: $('trace-mode'), strokeNote: $('stroke-note'), assembleNote: $('assemble-note'),
   saveSvg: $('save-svg'), stepList: $('step-list'), work: $('work'),
   gridView: $('grid-view'), fontView: $('font-view'), zoomGroup: $('zoom-group'),
   zoomIn: $('zoom-in'), zoomOut: $('zoom-out'), zoom1: $('zoom-1'), fit: $('fit'),
@@ -143,6 +143,7 @@ let exclusive = true;       // спорный пиксель отходит од
 let layerSeq = 0;
 let fillMode = localStorage.getItem('pantograph.fill') === 'color' ? 'color' : 'flat';
 let strokeTrace = false;    // обводить осевую линию вместо границы
+let traceKind = 'fill';     // 'fill' | 'stroke' | 'assemble' — сборка из примитивов
 
 const cur = () => layers[active] || null;
 let tolSync = null;         // перечитать ползунок допуска с активного слоя
@@ -233,7 +234,7 @@ worker.onmessage = (ev) => {
   if (phase === 'derived') {
     for (const got of m.layers ?? []) {
       const L = layers.find((x) => x.id === got.id);
-      if (L) L.shape = got.shape;
+      if (L) { L.shape = got.shape; L.assembly = got.assembly ?? null; }
     }
     shape = cur() ? cur().shape : null;
     selection = new Set();
@@ -242,7 +243,7 @@ worker.onmessage = (ev) => {
   // Осевая линия у залитой фигуры распадается на десятки кусков: ветвей у неё
   // столько же, сколько неровностей на границе. Молча отдать эту труху нельзя —
   // человек решит, что так и надо.
-  if (strokeTrace && m.stats && m.stats.contours > 12) {
+  if (traceKind === 'stroke' && m.stats && m.stats.contours > 12) {
     say(`Похоже, картинка не линейная: осевая распалась на ${m.stats.contours} кусков.`
       + ' Штрихом стоит обводить рисунки, начерченные линией.', true);
   } else {
@@ -653,7 +654,7 @@ function fullParams() {
     tolerance: cur() ? cur().tolerance : params.tolerance,
     layers: layers.map((L) => ({ id: L.id, fg: L.fg, tolerance: L.tolerance })),
     exclusive,
-    stroke: strokeTrace && route !== 'font',
+    stroke: route === 'font' ? false : (traceKind === 'assemble' ? 'assemble' : strokeTrace),
     route,
   };
 }
@@ -685,7 +686,9 @@ el.tune.addEventListener('click', () => {
     return;
   }
   if (strokeTrace && route !== 'font') {
-    say('Подбор не работает в режиме штриха: у осевой линии нет площади для сверки.', true);
+    say(traceKind === 'assemble'
+      ? 'Подбор не работает в режиме сборки: примитивы подбираются сами.'
+      : 'Подбор не работает в режиме штриха: у осевой линии нет площади для сверки.', true);
     return;
   }
   tuning = true;
@@ -1825,7 +1828,7 @@ function currentState() {
   const crop = store.get('crop');
   return {
     imageName: src?.name, crop: crop?.rect ?? null, route, params, colors,
-    layers, exclusive, stroke: strokeTrace,
+    layers, exclusive, stroke: traceKind === 'assemble' ? 'assemble' : strokeTrace,
     glyphEdits: [...glyphEdits],
     phase, shape, text: el.textIn.value, codes,
     glyphCount: glyphs ? glyphs.glyphs.length : 0,
@@ -1889,11 +1892,13 @@ async function applyRecord(rec, imageBlob) {
       if (tolSync) tolSync();
       exclusive = rec.exclusive !== false;
       el.layExclusive.checked = exclusive;
-      strokeTrace = Boolean(rec.stroke);
+      traceKind = rec.stroke === 'assemble' ? 'assemble' : (rec.stroke ? 'stroke' : 'fill');
+      strokeTrace = traceKind !== 'fill';
       for (const b of el.traceMode.querySelectorAll('button')) {
-        b.classList.toggle('on', (b.dataset.trace === 'stroke') === strokeTrace);
+        b.classList.toggle('on', b.dataset.trace === traceKind);
       }
-      el.strokeNote.hidden = !strokeTrace;
+      el.strokeNote.hidden = traceKind !== 'stroke';
+      el.assembleNote.hidden = traceKind !== 'assemble';
       updateSwatches();
       requestTrace();
     }
@@ -1932,12 +1937,22 @@ el.saveSvg.addEventListener('click', () => {
   if (!live.length || !crop) { say('Сначала нужен контур.', true); return; }
   const src = store.get('source');
   const base = (src && src.name ? src.name.split('/').pop().replace(/\.[^.]+$/, '') : 'контур');
-  const doc = toLayeredSvg(live, {
-    width: crop.imageData.width,
-    height: crop.imageData.height,
-    colored: fillMode === 'color',
-  });
+  // Сборка уходит настоящими примитивами; несколько слоёв сборкой — по
+  // очереди в одном файле пока не собираются, честно отдаём кривые.
+  const asmLayer = traceKind === 'assemble' && live.length === 1 && live[0].assembly ? live[0] : null;
+  const doc = asmLayer
+    ? toAssemblySvg(asmLayer.assembly, { width: crop.imageData.width, height: crop.imageData.height })
+    : toLayeredSvg(live, {
+      width: crop.imageData.width,
+      height: crop.imageData.height,
+      colored: fillMode === 'color',
+    });
   download(new Blob([doc], { type: 'image/svg+xml' }), `${base}.svg`);
+  if (asmLayer) {
+    say(`Сохранён ${base}.svg — сборка: примитивов ${asmLayer.assembly.parts.length}, `
+      + `толщина штриха ${asmLayer.assembly.width.toFixed(1)} px.`);
+    return;
+  }
   const nodes = live.reduce((a, L) => a + L.shape.contours.reduce((b, c) => b + c.nodes.length, 0), 0);
   say(`Сохранён ${base}.svg — ${live.length > 1 ? `слоёв ${live.length}, ` : ''}`
     + `контуров ${live.reduce((a, L) => a + L.shape.contours.length, 0)}, узлов ${nodes}.`);
@@ -1946,9 +1961,11 @@ el.saveSvg.addEventListener('click', () => {
 el.traceMode.addEventListener('click', (ev) => {
   const btn = ev.target instanceof Element && ev.target.closest('button[data-trace]');
   if (!btn) return;
-  strokeTrace = btn.dataset.trace === 'stroke';
+  traceKind = btn.dataset.trace;
+  strokeTrace = traceKind !== 'fill';
   for (const b of el.traceMode.querySelectorAll('button')) b.classList.toggle('on', b === btn);
-  el.strokeNote.hidden = !strokeTrace;
+  el.strokeNote.hidden = traceKind !== 'stroke';
+  el.assembleNote.hidden = traceKind !== 'assemble';
   // Ход трассировки сменился — прежние правки к новому контуру не относятся.
   if (phase === 'detached') reattach();
   selection = new Set();

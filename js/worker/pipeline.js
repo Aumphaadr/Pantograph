@@ -13,6 +13,7 @@ import {
 import { layerMasks, unionMask } from '../prep/layers.js';
 import { symmetrize } from '../prep/symmetry.js';
 import { traceMask, traceStroke } from '../trace/trace.js';
+import { assemble, assemblyToShape } from '../assemble/assemble.js';
 import { mismatch } from '../trace/rasterize.js';
 import { buildGlyphs } from '../glyphs/build.js';
 import { countNodes } from '../core/path.js';
@@ -104,19 +105,33 @@ function iconJob(params) {
   // «Обвести как штрих» — отдельный ход, а не замена: заливка и осевая
   // линия отвечают на разные вопросы, и подменять одно другим молча нельзя.
   // Скелету нужна битовая маска: он считает чернилами всё, что больше нуля.
-  const shapes = params.stroke
-    ? masks.map((m) => traceStroke(threshold(m, params.level), k, traceOpts))
-    : masks.map((m) => traceMask(m, k, traceOpts));
+  // Сборка — из примитивов по осевой; наружу она показывается обычной
+  // фигурой (кубики по дугам), а в SVG уходит примитивами.
+  let assemblies = null;
+  let shapes;
+  if (params.stroke === 'assemble') {
+    assemblies = masks.map((m) => assemble(threshold(m, params.level), k, {
+      fitError: params.fitError, cornerAngle: params.cornerAngle, minArea: params.minArea,
+    }));
+    shapes = assemblies.map((a) => assemblyToShape(a));
+  } else if (params.stroke) {
+    shapes = masks.map((m) => traceStroke(threshold(m, params.level), k, traceOpts));
+  } else {
+    shapes = masks.map((m) => traceMask(m, k, traceOpts));
+  }
   const mask = threshold(unionMask(masks), params.level);
 
   // Метрика: рендер всех слоёв разом против объединённой маски. У осевых
-  // линий площади нет — там расхождение площади не определено, и это честно.
-  const fit = params.stroke
-    ? null
-    : mismatch(mask, { contours: shapes.flatMap((s) => s.contours) }, k,
+  // линий площади нет — там расхождение площади не определено, и это честно;
+  // у сборки площадь есть — её растр сверен внутри assemble.
+  let fit = null;
+  if (assemblies) fit = assemblies.length === 1 ? assemblies[0].fit : null;
+  else if (!params.stroke) {
+    fit = mismatch(mask, { contours: shapes.flatMap((s) => s.contours) }, k,
       Math.max(1, (params.minArea ?? 4) * k * k));
+  }
 
-  return { inks, k, sym, mask, shapes, fit };
+  return { inks, k, sym, mask, shapes, fit, assemblies };
 }
 
 /**
@@ -227,6 +242,8 @@ function run() {
         shape,
         nodes: countNodes(shape),
         contours: shape.contours.length,
+        // Пятна несут узлы, прочие примитивы — параметры; воркер отдаёт всё.
+        assembly: r.assemblies ? { parts: r.assemblies[i].parts, width: r.assemblies[i].width, fit: r.assemblies[i].fit } : null,
       })),
       stats: {
         ms: Math.round(performance.now() - t0),

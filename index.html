@@ -129,11 +129,17 @@
           <div class="seg" id="trace-mode">
             <button data-trace="fill" class="on">Заливкой</button>
             <button data-trace="stroke">Штрихом</button>
+            <button data-trace="assemble">Сборкой</button>
           </div>
         </div>
         <p class="hint-block" id="stroke-note" hidden>Осевая линия фигуры вместо
           её границы: линейная иконка перестаёт быть двухконтурной «трубой»,
           и толщину можно менять. Толщина у контура своя, померена по фигуре.</p>
+        <p class="hint-block" id="assemble-note" hidden>Осевая линия собирается
+          из примитивов: круг, прямоугольник со скруглением и поворотом,
+          отрезок, ломаная, путь из отрезков и дуг; пятна — заливкой. В SVG
+          уходят настоящие &lt;rect&gt;, &lt;circle&gt;, &lt;line&gt; с одной
+          толщиной штриха. Что не собралось — остаётся кривыми.</p>
         <dl class="facts">
           <div><dt>Контуров</dt><dd id="stat-contours">—</dd></div>
           <div><dt>Узлов</dt><dd id="stat-nodes">—</dd></div>

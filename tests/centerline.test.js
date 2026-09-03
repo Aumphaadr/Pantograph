@@ -160,3 +160,28 @@ test('пиксель на самой кромке кропа не съедает
   const minX = Math.min(...out[0].points.map((p) => p.x));
   eq(minX <= 2, true, `линия доходит до кромки, ближайший x = ${minX}`);
 });
+
+test('диагональная полоса не съедается с конца до развилки', () => {
+  // Чжан — Сунь снимал концевую пару двухпиксельной лесенки за проход:
+  // луч «×» в 300 px исчезал целиком. Полоса «\» толщиной 30 из угла в угол.
+  const w = 220;
+  const m = createMask(w, w);
+  for (let y = 0; y < w; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const along = (x + y) / 2;
+      const across = Math.abs(x - y) / Math.SQRT2;
+      if (along > 30 && along < 190 && across <= 15) m.data[y * w + x] = 1;
+    }
+  }
+  const px = thin(m);
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let y = 0; y < w; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (!px[y * w + x]) continue;
+      lo = Math.min(lo, (x + y) / 2);
+      hi = Math.max(hi, (x + y) / 2);
+    }
+  }
+  eq(hi - lo > 120, true, `скелет тянется ${lo}..${hi} — ждём почти всю полосу 30..190`);
+});
