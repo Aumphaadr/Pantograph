@@ -52,15 +52,20 @@ await new Promise((res) => { server.listen(PORT, '127.0.0.1', res); });
 const BROWSERS = ['google-chrome', 'chromium', 'chromium-browser', 'google-chrome-stable'];
 let browser = null;
 for (const bin of BROWSERS) {
-  try {
-    browser = spawn(bin, [
-      '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, '--disable-gpu',
-      '--no-first-run', '--no-default-browser-check', '--hide-scrollbars',
-      `--user-data-dir=/tmp/pantograph-e2e-${process.pid}`, '--window-size=1400,900', 'about:blank',
-    ], { stdio: 'ignore' });
-    await sleep(400);
-    if (browser.exitCode === null) break;
-  } catch { browser = null; }
+  const child = spawn(bin, [
+    '--headless=new', `--remote-debugging-port=${DEBUG_PORT}`, '--disable-gpu',
+    '--no-first-run', '--no-default-browser-check', '--hide-scrollbars',
+    `--user-data-dir=/tmp/pantograph-e2e-${process.pid}`, '--window-size=1400,900', 'about:blank',
+  ], { stdio: 'ignore' });
+  // Ненайденный браузер — не исключение, а событие 'error': без слушателя оно
+  // роняет весь прогон, и до следующего имени в списке дело не доходит.
+  const started = await new Promise((res) => {
+    child.once('spawn', () => res(true));
+    child.once('error', () => res(false));
+  });
+  if (!started) continue;
+  await sleep(400);
+  if (child.exitCode === null) { browser = child; break; }
 }
 if (!browser) {
   console.log('пропущено: не нашёлся google-chrome или chromium');

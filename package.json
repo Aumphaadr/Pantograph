@@ -4,8 +4,22 @@
   "private": true,
   "type": "module",
   "description": "Снять контур с растровой картинки: иконку — в SVG, набор букв — в шрифт",
+  "license": "MIT",
+  "author": "Nathaniel Larsson",
+  "homepage": "https://aumphaadr.github.io/Pantograph/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Aumphaadr/Pantograph.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Aumphaadr/Pantograph/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "node tests/run.js",
-    "serve": "python3 -m http.server 8080"
+    "serve": "python3 -m http.server 8080",
+    "icons:sync": "node tools/sync-icons.mjs"
   }
 }

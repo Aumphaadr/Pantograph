@@ -127,6 +127,14 @@ export function samplePiece(piece, step = 1) {
  * @param {number} [o.maxRadius] — дуга радиусом больше этого — прямая
  * @param {number} [o.arcPenalty] — дуга дороже отрезка на столько кусков (0.5:
  *   две дуги никогда не дешевле отрезка и дуги, но дуга дешевле двух отрезков)
+ * @param {number} [o.errWeight] — цена ошибки куска: столько кусков за пиксель
+ *   наибольшего отклонения (0 — ошибка решает только при равном числе кусков).
+ *   Без неё разбор кладёт на сторону прямоугольника пологую дугу во весь
+ *   допуск, а отрезок ведёт от точки внутри скругления угла — кромка
+ *   наклоняется; контур заливки (assemble/outline.js) берёт 1.
+ * @param {number} [o.stride] — ещё и каждая stride-я точка в кандидатах вершин
+ *   (0 — только вершины упрощения): иначе конец отрезка может встать лишь в
+ *   вершину упрощения, а у скруглённого угла их нет на самой прямой.
  * @returns {Array} куски по порядку; соседние делят концы
  */
 export function segmentChain(pts, tol, o = {}) {
@@ -134,6 +142,7 @@ export function segmentChain(pts, tol, o = {}) {
   if (n < 2) return [];
   const maxRadius = o.maxRadius ?? Infinity;
   const arcPenalty = o.arcPenalty ?? 0.5;
+  const errWeight = o.errWeight ?? 0;
 
   // Вершины-кандидаты: упрощение с половиной допуска плюс обязательные углы
   // и концы. Кусок тянется от вершины к вершине.
@@ -143,6 +152,7 @@ export function segmentChain(pts, tol, o = {}) {
   for (const i of o.corners ?? []) if (i >= 0 && i < n) keep[i] = 1;
   const simp = rdpIndices(pts, tol * 0.5);
   for (const i of simp) keep[i] = 1;
+  if (o.stride > 0) for (let i = 0; i < n; i += o.stride) keep[i] = 1;
   const verts = [];
   for (let i = 0; i < n; i += 1) if (keep[i]) verts.push(i);
   const must = new Set(o.corners ?? []);
@@ -168,7 +178,7 @@ export function segmentChain(pts, tol, o = {}) {
         if (misses > 3) break;
       } else {
         misses = 0;
-        const total = best[a].cost + cost;
+        const total = best[a].cost + cost + errWeight * piece.err;
         const err = best[a].err + piece.err;
         if (!best[b] || total < best[b].cost - 1e-9 || (Math.abs(total - best[b].cost) < 1e-9 && err < best[b].err)) {
           best[b] = { cost: total, err, prev: a, piece };

@@ -3,6 +3,8 @@
 // Ширина панели живёт в переменной CSS: вёрстка сеточная, менять надо одно
 // число. Тянется мышью, слушается клавиатуры, помнится между сеансами.
 
+import { setIcon } from './icons.js';
+
 const KEY = 'pantograph.panelWidth';
 const MIN = 240;
 const STEP = 16;
@@ -40,8 +42,9 @@ export function createSplitter({ el, host, toggle, deflt = 340, onResize = () =>
     el.setAttribute('aria-valuenow', String(collapsed ? 0 : width));
     el.classList.toggle('collapsed', collapsed);
     if (toggle) {
-      toggle.textContent = collapsed ? '‹' : '›';
+      setIcon(toggle, collapsed ? 'chevron-left' : 'chevron-right');
       toggle.title = collapsed ? 'Показать панель' : 'Свернуть панель';
+      toggle.setAttribute('aria-label', toggle.title);
       toggle.setAttribute('aria-expanded', String(!collapsed));
     }
     onResize();

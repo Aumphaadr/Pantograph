@@ -7,6 +7,8 @@
 // Всплывашка живёт в конце body: панель прокручивается и обрезает всё, что
 // вылезает за её край.
 
+import { icon } from './icons.js';
+
 let pop = null;
 let owner = null;
 let seq = 0;
@@ -59,7 +61,7 @@ export function hintButton(text) {
   b.type = 'button';
   b.className = 'hint';
   b.dataset.hint = text;
-  b.textContent = '?';
+  b.append(icon('circle-question'));
   b.setAttribute('aria-label', 'Что это');
   return b;
 }

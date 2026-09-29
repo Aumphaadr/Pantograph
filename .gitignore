@@ -1,0 +1,19 @@
+node_modules/
+*.log
+.DS_Store
+BACKLOG.md
+
+# Временные файлы отладочных прогонов.
+_shot.html
+_dump.html
+_fav.html
+
+# Мерные корпуса: THIRD-PARTY-NOTICES.md, раздел «Мерные корпуса».
+refs/
+# Рендеры и отчёты мерных линеек
+tests/_iconref/
+
+# Картинки для смотровых страниц tests/*-visual.html.
+icon-crops/
+icon-masters/
+glyph-sheets/

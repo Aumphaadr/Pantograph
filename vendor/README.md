@@ -6,9 +6,16 @@
 ## opentype.module.js
 
 - **opentype.js 1.3.4**, ESM-сборка `dist/opentype.module.js`
-- источник: `https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.module.js`
+- источник: `https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.module.js` —
+  скачан оттуда один раз; страница грузит его только из `vendor/`
 - лицензия MIT, автор Frederik De Bleser
-- **не изменён** — файл ровно такой, каким пришёл
+- **не изменён** — файл ровно такой, каким пришёл: совпадает байт в байт
+  с `dist/opentype.module.js` пакета npm `opentype.js@1.3.4`
+  (SHA-256 `8d79d17388114a29d74681dfaed84068b1d7d9b4e39a9544fb6406d25579ad8f`)
+- в сборку вшиты два чужих пакета: tiny-inflate (Devon Govett, MIT)
+  и полифилл `String.prototype.codePointAt` 0.2.0 (Mathias Bynens, MIT)
+- тексты всех трёх лицензий — рядом, в
+  [`opentype.js-LICENSE.txt`](opentype.js-LICENSE.txt)
 
 Используется в `js/export/font.js` для сборки `.otf`.
 

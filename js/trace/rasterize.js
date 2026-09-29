@@ -28,9 +28,10 @@ export function flattenContour(contour, steps = 10) {
 /**
  * Shape → бинарная маска w×h. Координаты контура умножаются на scale:
  * контур живёт в пикселях кропа, маска — в увеличенных.
- * Заполнение ненулевым правилом, пиксель берётся по своему центру.
+ * Заполнение ненулевым правилом (или чёт-нечет по rule), пиксель берётся
+ * по своему центру.
  */
-export function rasterizeShape(shape, w, h, scale = 1, steps = 10) {
+export function rasterizeShape(shape, w, h, scale = 1, steps = 10, rule = 'nonzero') {
   const out = new Uint8Array(w * h);
   const edges = [];
   for (const c of shape.contours) {
@@ -62,7 +63,9 @@ export function rasterizeShape(shape, w, h, scale = 1, steps = 10) {
     let from = 0;
     for (const c of xs) {
       const wasIn = wind !== 0;
-      wind += c.w;
+      // Чёт-нечет — для чужих контуров (SVG с fill-rule="evenodd"): там
+      // дырка — любой второй контур, независимо от обхода.
+      wind = rule === 'evenodd' ? (wind ? 0 : 1) : wind + c.w;
       if (!wasIn && wind !== 0) from = c.x;
       else if (wasIn && wind === 0) {
         const first = Math.max(0, Math.ceil(from - 0.5));

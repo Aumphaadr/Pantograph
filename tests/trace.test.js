@@ -410,7 +410,8 @@ test('край стоит там, где покрытие говорит: отс
     for (let x = 0; x < m.w; x += 1) m.data[y * m.w + x] = cover(3.25, 9.6, x) * cover(2.5, 7.8, y);
   }
   for (const k of [1, 3, 4]) {
-    const shape = traceMask(upscale(coverageToField(m), k), k, { simplify: 0.1, fitError: 0.15 });
+    // Окно угла — как его выставит приложение на кропе такого размера: два пикселя.
+    const shape = traceMask(upscale(coverageToField(m), k), k, { simplify: 0.1, fitError: 0.15, cornerSpan: 2 });
     const pts = shape.contours.flatMap((c) => flatten(c, 8));
     const xs = pts.map((p) => p.x);
     const ys = pts.map((p) => p.y);

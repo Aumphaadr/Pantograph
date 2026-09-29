@@ -33,6 +33,7 @@ import {
 import { saveLocal, loadLocal, clearLocal } from '../idb.js';
 import { createSplitter } from './splitter.js';
 import { installHints, hintButton } from './hints.js';
+import { icon, mountIcons } from './icons.js';
 
 // Строка состояния: единственный голос приложения к человеку.
 // say(null) — «всё в порядке, сказать нечего»; второй аргумент красит в тревогу.
@@ -49,6 +50,9 @@ function sayDone() {
 
 const SMALL_SIDE = 32;   // ниже этого трассировка честно предупреждает (см. SPEC, риски)
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Значки разметки (<span data-icon>) — сразу, до того как кнопки начнут менять содержимое.
+mountIcons();
 
 const $ = (id) => document.getElementById(id);
 
@@ -777,21 +781,6 @@ function paramInputs() {
     .flatMap((box) => [...box.querySelectorAll('input, select')]);
 }
 
-function pipIcon() {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('class', 'pip');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('aria-hidden', 'true');
-  const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', 'M10.5 2.5a1.8 1.8 0 0 1 2.5 2.5l-1.2 1.2 1 1-1 1-1-1-4.4 4.4-2.4.7.7-2.4 4.4-4.4-1-1 1-1 1 1z');
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', 'currentColor');
-  path.setAttribute('stroke-width', '1.3');
-  path.setAttribute('stroke-linejoin', 'round');
-  svg.append(path);
-  return svg;
-}
-
 function renderLayers() {
   el.layerList.replaceChildren();
   layers.forEach((L, i) => {
@@ -807,7 +796,7 @@ function renderLayers() {
     const sw = document.createElement('span');
     sw.className = 'swatch';
     sw.style.background = rgb(L.fg);
-    pick.append(sw, pipIcon());
+    pick.append(sw, icon('pipette', 'pip'));
 
     const name = document.createElement('button');
     name.type = 'button';
@@ -824,14 +813,16 @@ function renderLayers() {
     eye.className = 'lay-eye';
     eye.dataset.act = 'eye';
     eye.title = L.visible ? 'Скрыть слой' : 'Показать слой';
-    eye.textContent = L.visible ? '●' : '○';
+    eye.setAttribute('aria-label', eye.title);
+    eye.append(icon(L.visible ? 'eye' : 'eye-off'));
 
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'lay-del';
     del.dataset.act = 'del';
     del.title = 'Удалить слой';
-    del.textContent = '✕';
+    del.setAttribute('aria-label', del.title);
+    del.append(icon('trash'));
     del.disabled = layers.length < 2;
 
     li.append(pick, name, eye, del);
@@ -1681,7 +1672,8 @@ function buildStepList() {
     if (i) {
       const sep = document.createElement('li');
       sep.className = 'step-sep';
-      sep.textContent = '›';
+      sep.setAttribute('aria-hidden', 'true');
+      sep.append(icon('chevron-right'));
       el.stepList.append(sep);
     }
     const li = document.createElement('li');
@@ -2113,6 +2105,13 @@ function buildControls(factor = 1) {
       const label = document.createElement('label');
       label.textContent = c.label;
       label.htmlFor = `ctl-${c.key}`;
+      if (c.icon) {
+        // Направление — значком; словами — для чтения с экрана.
+        const said = document.createElement('span');
+        said.className = 'sr-only';
+        said.textContent = ` ${c.iconText}`;
+        label.append(' ', icon(c.icon, 'ico-text'), said);
+      }
 
       const head2 = document.createElement('div');
       head2.className = 'ctl-head';

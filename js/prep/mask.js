@@ -291,6 +291,48 @@ export function morph(mask, { open = 0, close = 0 } = {}) {
   return m;
 }
 
+/**
+ * Гауссово размытие, разделимое; за краем — фон, как у морфологии.
+ *
+ * Нужно перед обводкой ДВОИЧНОЙ маски: изолиния битов идёт лесенкой, и
+ * подгонка в допуске ловит ступеньки — прямая кромка значка выходила
+ * волной (перечёркнутый глаз, prep/weight.js). После размытия в полтора
+ * пикселя изолиния на уровне 0.5 проходит по той же кромке, но гладко;
+ * углы скругляются на те же полтора пикселя.
+ */
+export function gaussian(mask, sigma) {
+  if (!(sigma > 0)) return mask;
+  const { w, h } = mask;
+  const r = Math.ceil(sigma * 3);
+  const k = [];
+  let sum = 0;
+  for (let i = -r; i <= r; i += 1) { const v = Math.exp(-(i * i) / (2 * sigma * sigma)); k.push(v); sum += v; }
+  for (let i = 0; i < k.length; i += 1) k[i] /= sum;
+  const mid = new Float32Array(w * h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let v = 0;
+      for (let t = -r; t <= r; t += 1) {
+        const xx = x + t;
+        if (xx >= 0 && xx < w) v += mask.data[y * w + xx] * k[t + r];
+      }
+      mid[y * w + x] = v;
+    }
+  }
+  const out = createMask(w, h);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      let v = 0;
+      for (let t = -r; t <= r; t += 1) {
+        const yy = y + t;
+        if (yy >= 0 && yy < h) v += mid[yy * w + x] * k[t + r];
+      }
+      out.data[y * w + x] = v;
+    }
+  }
+  return out;
+}
+
 /** Рамка из нулей. Гарантирует, что все изолинии замкнутся внутри сетки. */
 export function pad(mask, n = 1, value = 0) {
   const out = createMask(mask.w + n * 2, mask.h + n * 2);

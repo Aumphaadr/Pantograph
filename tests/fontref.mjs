@@ -1,7 +1,7 @@
 // tests/fontref.mjs — сверка обводки с НАСТОЯЩИМИ шрифтами.
 //
 // Не автотест, а мерная линейка: `node tests/fontref.mjs [lato|free_serif]`.
-// В font_ref/ лежат текст, переведённый Inkscape в контуры (.svg), и его же
+// В refs/font_ref/ лежат текст, переведённый Inkscape в контуры (.svg), и его же
 // рендер (.png, 100 dpi). Лист обводится нашим конвейером как в приложении,
 // и каждая буква сверяется с контуром, который её породил:
 //   — увод от истины, px (площадь симметрической разности на длину края);
@@ -10,7 +10,7 @@
 //   — структура: сколько углов истины найдено, найдено гладкими, пропущено.
 // Ничего, кроме Node: PNG читается своим декодером (zlib встроен).
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -21,6 +21,8 @@ import { countNodes, transform } from '../js/core/path.js';
 import { regularizeShape } from '../js/trace/regularize.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Референсы лежат в refs/ (владелец держит их вне репозитория); старое место — корень.
+const REF = existsSync(join(ROOT, 'refs', 'font_ref')) ? join(ROOT, 'refs', 'font_ref') : join(ROOT, 'font_ref');
 const PX = 100 / 25.4;   // пикселей на мм при экспорте 100 dpi
 // Поправка экспорта: Inkscape округляет холст до целых пикселей и сдвигает
 // рендер на долю пикселя; замерена сырой обводкой (лучший общий сдвиг).
@@ -99,7 +101,7 @@ function loadSvg(file) {
 }
 
 /** d → контуры из сегментов {kind:'L'|'Q'|'C', pts}. Команды Inkscape: m l h v q c z. */
-function parsePath(d) {
+export function parsePath(d) {
   const tok = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e-?\d+)?/g);
   const contours = [];
   let cur = null;
@@ -147,7 +149,7 @@ function parsePath(d) {
 const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
 
 /** Контур сегментов → узлы с рычагами; квадратики поднимаются до кубик. */
-function toNodes(c) {
+export function toNodes(c) {
   const n = c.segs.length;
   const cubics = c.segs.map((s) => {
     if (s.kind === 'L') return [s.pts[0], null, null, s.pts[1]];
@@ -172,7 +174,7 @@ function toNodes(c) {
 
 /** Настоящие контуры листа в пикселях PNG, по знакам. */
 export function truthGlyphs(name) {
-  const { chars, paths, offset: [tx, ty] } = loadSvg(join(ROOT, 'font_ref', `${name}.svg`));
+  const { chars, paths, offset: [tx, ty] } = loadSvg(join(REF, `${name}.svg`));
   const [cx, cy] = CALIB[name] ?? [0, 0];
   return paths.map((d, i) => {
     const raw = { contours: parsePath(d).map((c) => ({ closed: true, nodes: toNodes(c) })).filter((c) => c.nodes.length >= 2) };
@@ -195,7 +197,7 @@ export const DEFAULT_PARAMS = {
 
 /** Лист → глифы, как в fontJob воркера. */
 export function runSheet(name, params = {}) {
-  const img = readPng(join(ROOT, 'font_ref', `${name}.png`));
+  const img = readPng(join(REF, `${name}.png`));
   const p = { ...DEFAULT_PARAMS, ...params };
   const soft = coverageToField(colorDistance(img, { fg: p.fg, bg: p.bg, tolerance: p.tolerance }));
   const bin = morph(threshold(soft, p.level), { open: p.open, close: p.close });
@@ -262,6 +264,11 @@ export function report(name, params = {}) {
 }
 
 if (process.argv[1] && process.argv[1].endsWith('fontref.mjs')) {
+  if (!existsSync(REF)) {
+    console.error(`fontref: нет корпуса ${join(ROOT, 'refs', 'font_ref')} — сверять не с чем. `
+      + 'Корпус в репозиторий не входит: см. THIRD-PARTY-NOTICES.md, раздел «Мерные корпуса».');
+    process.exit(1);
+  }
   const names = process.argv.slice(2).length ? process.argv.slice(2) : ['lato', 'free_serif'];
   for (const name of names) {
     const r = report(name);

@@ -128,7 +128,20 @@ body {
 .btn:hover:not(:disabled) { background: var(--surface-2); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .btn:disabled { opacity: 0.45; cursor: default; }
-.btn.icon { padding: 5px 10px; font-size: 15px; line-height: 1; }
+/* Значки — набор Klaarheid Icons (icons/klaarheid, js/ui/icons.js): встроенный
+   <svg>, красится цветом текста. Кнопка-значок той же высоты, что текстовая:
+   18 px значка + 6.5 px полей = 21 px строки + 5 px полей. */
+.ico { display: block; flex: none; width: 18px; height: 18px; }
+.btn.icon { padding: 6.5px 9px; line-height: 0; }
+.ico-text { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; color: var(--ink-2); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 .btn.wide { width: 100%; padding: 8px; }
 
 /* ─── полоса шагов ───────────────────────────────────────────────────────── */
@@ -190,7 +203,8 @@ body {
   flex: none;
 }
 
-.step-sep { color: var(--rule-firm); padding: 0 2px; }
+.step-sep { color: var(--rule-firm); padding: 0 2px; display: flex; align-items: center; }
+.step-sep .ico { width: 14px; height: 14px; }
 
 /* ─── рабочая область ────────────────────────────────────────────────────── */
 
@@ -249,6 +263,7 @@ main {
   z-index: 2;
 }
 
+.splitter-toggle .ico { width: 13px; height: 13px; margin: 0 auto; }
 .splitter-toggle:hover { color: var(--accent); border-color: var(--accent); }
 .splitter.collapsed { cursor: e-resize; }
 
@@ -406,18 +421,21 @@ label.btn { display: inline-flex; align-items: center; justify-content: center; 
 
 .hint {
   flex: none;
-  width: 19px;
-  height: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  font: 700 14px/1 var(--f-ui);
   color: var(--ink-3);
   background: transparent;
-  border: 1px solid var(--rule-firm);
+  border: none;
   border-radius: 50%;
   cursor: help;
 }
 
-.hint:hover, .hint:focus-visible { color: var(--accent); border-color: var(--accent); }
+.hint .ico { width: 18px; height: 18px; }
+.hint:hover, .hint:focus-visible { color: var(--accent); }
 .hint:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .hint-pop {
@@ -802,10 +820,10 @@ body:not(.has-image) .stage-seg { display: none; }
 
 .lay-eye, .lay-del {
   flex: none;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1;
-  width: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
   padding: 5px 0;
   border: 1px solid var(--rule);
   border-radius: 4px;
@@ -814,6 +832,7 @@ body:not(.has-image) .stage-seg { display: none; }
   cursor: pointer;
 }
 
+.lay-eye .ico, .lay-del .ico { width: 16px; height: 16px; }
 .lay-eye:hover, .lay-del:hover { background: var(--surface-2); color: var(--ink); }
 .lay-del:disabled { opacity: 0.35; cursor: default; }
 

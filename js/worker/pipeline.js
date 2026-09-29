@@ -297,23 +297,34 @@ async function tune(gen, params) {
     return p;
   };
 
+  // Сверка — с ОДНОЙ маской, снятой при исходных настройках. Иначе кандидат
+  // с другим «Порогом» сверялся бы со своей же, потолстевшей маской и
+  // проходил бесплатно: сравнение с истинными контурами (tests/iconref.mjs)
+  // показало, что подбор так уводил порог до 0.28 и 0.65 без пользы.
+  const ref = params.route === 'font' ? fontJob(params).bin : iconJob(params).mask;
+  const minComp = params.route === 'font'
+    ? Math.max(1, params.minArea ?? 4)
+    : Math.max(1, (params.minArea ?? 4) * capScale(crop.width, crop.height, params.upscale) ** 2);
+
   const evaluate = async (cand) => {
     // Уступить очередь: пусть войдут сообщения, способные нас оборвать.
     await new Promise((r) => { setTimeout(r, 0); });
     const p = merge(cand);
     if (params.route === 'font') {
       const r = fontJob(p);
+      const fit = mismatch(ref, { contours: r.built.glyphs.flatMap((g) => g.shape.contours) }, 1, minComp);
       return {
         nodes: r.built.glyphs.reduce((s, g) => s + g.nodes, 0),
         units: r.built.glyphs.length,
-        drift: r.fit.drift, compBin: r.fit.compBin, compRen: r.fit.compRen,
+        drift: fit.drift, compBin: fit.compBin, compRen: fit.compRen,
       };
     }
     const r = iconJob(p);
+    const fit = mismatch(ref, { contours: r.shapes.flatMap((s2) => s2.contours) }, r.k, minComp);
     return {
       nodes: r.shapes.reduce((a, s2) => a + countNodes(s2), 0),
       units: 1,
-      drift: r.fit.drift, compBin: r.fit.compBin, compRen: r.fit.compRen,
+      drift: fit.drift, compBin: fit.compBin, compRen: fit.compRen,
     };
   };
 
